@@ -1,13 +1,15 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 import base64
 import numpy as np
 import cv2
 import json
+import os
 
 from app.core.database import init_db
-from app.routers import auth, submissions, admin
+from app.routers import auth, submissions, admin, gesture_lookup
 from app.services.detector import GestureDetector  # pindah dari app/detector.py lama
 
 app = FastAPI(title="IsyaraLive API", version="2.0.0")
@@ -22,10 +24,17 @@ app.add_middleware(
 # Buat tabel database saat startup
 init_db()
 
+# Static files (video approved & video alfabet fallback)
+os.makedirs("uploads/approved", exist_ok=True)
+os.makedirs("assets/alphabet", exist_ok=True)
+app.mount("/static/approved", StaticFiles(directory="uploads/approved"), name="approved")
+app.mount("/static/alphabet", StaticFiles(directory="assets/alphabet"), name="alphabet")
+
 # Daftarkan semua router
 app.include_router(auth.router)
 app.include_router(submissions.router)
 app.include_router(admin.router)
+app.include_router(gesture_lookup.router)
 
 # Detector untuk WebSocket deteksi real-time (load model sekali)
 detector = GestureDetector()
