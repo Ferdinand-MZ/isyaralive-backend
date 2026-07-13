@@ -1,0 +1,15 @@
+fastapi==0.111.0
+uvicorn==0.30.1
+websockets==12.0
+python-multipart==0.0.9
+mediapipe>=0.10.30
+opencv-python-headless==4.9.0.80
+numpy==1.26.4
+torch>=2.9.0
+pillow>=10.0.0
+
+# Database & Auth (baru ditambahkan untuk fitur komunitas)
+sqlalchemy==2.0.30
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+email-validator==2.1.1

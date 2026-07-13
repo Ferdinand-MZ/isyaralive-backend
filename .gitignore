@@ -1,0 +1,74 @@
+# ==========================
+# Python
+# ==========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ==========================
+# Virtual environment
+# ==========================
+venv/
+env/
+.venv/
+ENV/
+
+# ==========================
+# Environment variables / secrets
+# ==========================
+.env
+.env.*
+!.env.example
+
+# ==========================
+# Database
+# ==========================
+database.db
+*.sqlite3
+*.db-journal
+
+# ==========================
+# Uploaded user content (video kontribusi SignHub)
+# ==========================
+uploads/pending/*
+uploads/approved/*
+uploads/rejected/*
+!uploads/pending/.gitkeep
+!uploads/approved/.gitkeep
+!uploads/rejected/.gitkeep
+
+# ==========================
+# Model & dataset besar (opsional — lihat catatan di bawah)
+# ==========================
+models/*.pt
+models/*.pkl
+models/*.task
+!models/.gitkeep
+
+# ==========================
+# Editor / OS
+# ==========================
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ==========================
+# Logs
+# ==========================
+*.log
+logs/
+
+# ==========================
+# Testing / coverage
+# ==========================
+.pytest_cache/
+.coverage
+htmlcov/
