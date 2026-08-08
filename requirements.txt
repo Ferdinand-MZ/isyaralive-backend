@@ -13,3 +13,7 @@ sqlalchemy==2.0.30
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 email-validator==2.1.1
+
+# AI (Azure OpenAI - fitur Analisis dengan AI)
+httpx==0.27.0
+python-dotenv==1.0.1

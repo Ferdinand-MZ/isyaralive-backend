@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
-from app.models.submission import SubmissionStatus
+from app.models.submission import SubmissionStatus, GestureCategory
 from app.schemas.user import UserResponse
 
 
@@ -10,15 +10,23 @@ class SubmissionResponse(BaseModel):
     label: str
     video_path: str
     status: SubmissionStatus
+    category: GestureCategory
+    description: Optional[str] = None
+    region: Optional[str] = None
     admin_note: Optional[str] = None
     created_at: datetime
     reviewed_at: Optional[datetime] = None
     user: UserResponse
+
+    # Ringkasan vote, dihitung di router (bukan kolom asli tabel)
+    upvotes: int = 0
+    downvotes: int = 0
+    my_vote: Optional[str] = None  # "upvote" / "downvote" / None, relatif ke user yang request
 
     class Config:
         from_attributes = True
 
 
 class SubmissionReview(BaseModel):
-    """Body request saat admin approve/reject"""
+    """Body request saat admin/validator approve/reject"""
     admin_note: Optional[str] = None

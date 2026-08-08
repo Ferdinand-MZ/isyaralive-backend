@@ -7,9 +7,17 @@ from app.core.database import Base
 
 
 class SubmissionStatus(str, enum.Enum):
-    pending = "pending"
-    approved = "approved"
+    pending = "pending"      # baru diupload, menunggu vote komunitas & validator
+    approved = "approved"    # sudah divalidasi validator, masuk dataset final
     rejected = "rejected"
+
+
+class GestureCategory(str, enum.Enum):
+    sehari_hari = "sehari-hari"
+    edukasi = "edukasi"
+    kesehatan = "kesehatan"
+    layanan_publik = "layanan-publik"
+    lainnya = "lainnya"
 
 
 class GestureSubmission(Base):
@@ -22,6 +30,11 @@ class GestureSubmission(Base):
     video_path = Column(String, nullable=False)      # path file video
     status = Column(Enum(SubmissionStatus), default=SubmissionStatus.pending)
 
+    # Field tambahan sesuai desain "Tambah Gestur Baru"
+    category = Column(Enum(GestureCategory), default=GestureCategory.lainnya, nullable=False)
+    description = Column(Text, nullable=True)   # "Deskripsi/Konteks"
+    region = Column(String, nullable=True)       # "Daerah/Dialek", opsional
+
     admin_note = Column(Text, nullable=True)          # alasan reject (opsional)
     reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
@@ -33,3 +46,4 @@ class GestureSubmission(Base):
         "User", back_populates="submissions", foreign_keys=[user_id]
     )
     reviewer = relationship("User", foreign_keys=[reviewed_by])
+    votes = relationship("Vote", back_populates="submission", cascade="all, delete-orphan")

@@ -171,6 +171,9 @@ class GestureDetector:
         Return:
         - buffering: True kalau masih ngumpulin frame
         - detected: True kalau sudah prediksi dan confidence cukup
+        - landmarks: list 63 angka (21 titik x,y,z) hasil MediaPipe untuk
+          frame saat ini, dipakai Flutter CustomPainter untuk gambar
+          skeleton overlay. None kalau tangan tidak terdeteksi di frame.
         """
         # Ekstrak landmark dari frame ini
         landmark = self._extract_landmarks(frame)
@@ -183,7 +186,8 @@ class GestureDetector:
                 "label": "",
                 "confidence": 0.0,
                 "buffering": False,
-                "buffer_size": 0
+                "buffer_size": 0,
+                "landmarks": None
             }
 
         # Tambah landmark ke buffer
@@ -196,7 +200,8 @@ class GestureDetector:
                 "label": "",
                 "confidence": 0.0,
                 "buffering": True,
-                "buffer_size": len(self.buffer)
+                "buffer_size": len(self.buffer),
+                "landmarks": landmark.tolist()
             }
 
         # DUMMY MODE
@@ -207,7 +212,8 @@ class GestureDetector:
                 "confidence": 0.0,
                 "buffering": False,
                 "buffer_size": SEQUENCE_LENGTH,
-                "info": "Taruh lstm_model.pt di /models/"
+                "info": "Taruh lstm_model.pt di /models/",
+                "landmarks": landmark.tolist()
             }
 
         # Prediksi dengan LSTM
@@ -231,7 +237,8 @@ class GestureDetector:
                 "label": "",
                 "confidence": round(confidence_val, 3),
                 "buffering": False,
-                "buffer_size": SEQUENCE_LENGTH
+                "buffer_size": SEQUENCE_LENGTH,
+                "landmarks": landmark.tolist()
             }
 
         label = self.class_names[predicted_idx]
@@ -241,7 +248,8 @@ class GestureDetector:
             "label": label,
             "confidence": round(confidence_val, 3),
             "buffering": False,
-            "buffer_size": SEQUENCE_LENGTH
+            "buffer_size": SEQUENCE_LENGTH,
+            "landmarks": landmark.tolist()
         }
 
     def reset_buffer(self):

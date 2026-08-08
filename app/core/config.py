@@ -1,4 +1,8 @@
 import os
+from dotenv import load_dotenv
+
+# Muat variabel dari file .env (kalau ada) ke environment
+load_dotenv()
 
 # ============================================================
 # KONFIGURASI APLIKASI
@@ -19,6 +23,16 @@ UPLOAD_REJECTED_DIR = f"{UPLOAD_DIR}/rejected"
 
 MAX_VIDEO_SIZE_MB = 50
 ALLOWED_VIDEO_EXTENSIONS = (".mp4", ".mov", ".MP4", ".MOV")
+
+# ============================================================
+# AZURE OPENAI (fitur "Analisis dengan AI" - perbaikan transkrip)
+# Wajib di-set via environment variable, JANGAN hardcode di sini.
+# Contoh AZURE_OPENAI_URL:
+# https://<resource-name>.openai.azure.com/openai/deployments/<deployment-name>/chat/completions?api-version=2024-08-01-preview
+# ============================================================
+AZURE_OPENAI_KEY = os.getenv("AZURE_OPENAI_KEY")
+AZURE_OPENAI_URL = os.getenv("AZURE_OPENAI_URL")
+AZURE_OPENAI_MODEL = os.getenv("AZURE_OPENAI_MODEL")
 
 # Buat folder kalau belum ada
 for folder in [UPLOAD_PENDING_DIR, UPLOAD_APPROVED_DIR, UPLOAD_REJECTED_DIR]:

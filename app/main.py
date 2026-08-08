@@ -9,8 +9,8 @@ import json
 import os
 
 from app.core.database import init_db
-from app.routers import auth, submissions, admin, gesture_lookup
-from app.services.detector import GestureDetector  # pindah dari app/detector.py lama
+from app.routers import auth, submissions, admin, gesture_lookup, ai, vote, leaderboard, dictionary, learning, chatbot
+from app.services.detector_instance import detector
 
 app = FastAPI(title="IsyaraLive API", version="2.0.0")
 
@@ -35,9 +35,14 @@ app.include_router(auth.router)
 app.include_router(submissions.router)
 app.include_router(admin.router)
 app.include_router(gesture_lookup.router)
+app.include_router(ai.router)
+app.include_router(vote.router)
+app.include_router(leaderboard.router)
+app.include_router(dictionary.router)
+app.include_router(learning.router)
+app.include_router(chatbot.router)
 
-# Detector untuk WebSocket deteksi real-time (load model sekali)
-detector = GestureDetector()
+# Detector real-time (LSTM) di-import sebagai singleton dari detector_instance
 
 
 @app.get("/")

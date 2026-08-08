@@ -19,6 +19,7 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     name = Column(String, nullable=False)
     role = Column(Enum(UserRole), default=UserRole.user, nullable=False)
+    points = Column(Integer, default=0, nullable=False)  # poin gamifikasi SignHub
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relasi: submission yang dibuat user ini
