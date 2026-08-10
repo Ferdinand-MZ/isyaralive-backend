@@ -13,7 +13,7 @@ from app.models.chat import ChatConversation, ChatMessage, MessageRole
 from app.models.dictionary import DictionaryEntry
 from app.schemas.chat import ChatReplyResponse, ChatHistoryResponse, ChatMessageOut, DictionaryMatchInfo
 from app.services.ai_service import chatbot_reply
-from app.services.video_gloss_service import extract_glosses_from_video
+from app.services.video_gloss_services import extract_glosses_from_video
 from app.services.detector_instance import detector
 from app.routers.gesture_lookup import get_alphabet_video
 

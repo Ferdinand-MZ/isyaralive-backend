@@ -9,7 +9,7 @@ from app.models.user import User
 from app.models.submission import GestureSubmission, SubmissionStatus
 from app.schemas.submission import SubmissionResponse, SubmissionReview
 from app.services.file_handler import move_video
-from app.services.points_service import add_points, POINTS_SUBMISSION_APPROVED
+from app.services.points_services import add_points, POINTS_SUBMISSION_APPROVED
 from app.core.config import UPLOAD_APPROVED_DIR, UPLOAD_REJECTED_DIR
 
 router = APIRouter(prefix="/admin", tags=["Admin Review"])

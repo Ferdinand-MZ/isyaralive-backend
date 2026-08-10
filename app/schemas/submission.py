@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from app.models.submission import SubmissionStatus, GestureCategory
 from app.schemas.user import UserResponse
 
@@ -30,3 +30,23 @@ class SubmissionResponse(BaseModel):
 class SubmissionReview(BaseModel):
     """Body request saat admin/validator approve/reject"""
     admin_note: Optional[str] = None
+
+class ContributorInfo(BaseModel):
+    """Info kontributor + peringkatnya, dipakai di layar 'Detail Gestur'."""
+    id: int
+    name: str
+    rank: Optional[int] = None
+    total_contributions: int
+
+
+class RelatedGesture(BaseModel):
+    """Item ringkas untuk 'Gestur Lainnya'."""
+    id: int
+    label: str
+    video_path: str
+
+
+class SubmissionDetailResponse(SubmissionResponse):
+    """Layar 'Detail Gestur' — SubmissionResponse + info kontributor & rekomendasi."""
+    contributor: ContributorInfo
+    related: List[RelatedGesture] = []

@@ -5,7 +5,7 @@ from typing import List
 from app.core.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
-from app.models.submission import GestureSubmission, SubmissionStatus
+from app.models.submission import GestureSubmission, SubmissionStatus, GestureCategory
 from app.schemas.submission import SubmissionResponse
 from app.services.file_handler import save_pending_video
 
@@ -15,6 +15,9 @@ router = APIRouter(prefix="/submissions", tags=["Community Submissions"])
 @router.post("/", response_model=SubmissionResponse)
 def create_submission(
     label: str = Form(..., description="Kata/kalimat dari gesture, contoh: 'Halo'"),
+    category: GestureCategory = Form(GestureCategory.lainnya, description="Kategori gestur"),
+    description: str = Form(None, description="Deskripsi/Konteks penggunaan gestur"),
+    region: str = Form(None, description="Daerah/Dialek asal gestur (opsional)"),
     video: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -29,7 +32,10 @@ def create_submission(
         user_id=current_user.id,
         label=label.strip(),
         video_path=video_path,
-        status=SubmissionStatus.pending
+        status=SubmissionStatus.pending,
+        category=category,
+        description=description.strip() if description else None,
+        region=region.strip() if region else None,
     )
     db.add(submission)
     db.commit()

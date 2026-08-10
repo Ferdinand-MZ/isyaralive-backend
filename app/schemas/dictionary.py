@@ -20,7 +20,7 @@ class DictionaryDetail(BaseModel):
     word: str
     category: DictionaryCategory
     video_path: str
-    cara_isyarat: Optional[str] = None
+    cara_isyarat: Optional[str] = None  
     already_learned: bool = False  # relatif ke user yang login (dari SignPedia belajar, kalau ada)
 
     class Config:
@@ -50,3 +50,11 @@ class AlphabetFallbackResponse(BaseModel):
     found: bool
     query: str
     letters: List[AlphabetLetter] = []
+
+class DictionarySearchResponse(BaseModel):
+    """Layar 'Hasil Pencarian Kata' — daftar match di kamus,
+    atau fallback ejaan alfabet kalau kata belum tersedia."""
+    query: str
+    found: bool
+    matches: List[DictionaryListItem] = []
+    alphabet: List[AlphabetLetter] = []

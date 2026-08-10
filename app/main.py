@@ -9,7 +9,7 @@ import json
 import os
 
 from app.core.database import init_db
-from app.routers import auth, submissions, admin, gesture_lookup, ai, vote, leaderboard, dictionary, learning, chatbot
+from app.routers import auth, submissions, admin, gesture_lookup, ai, vote, leaderboard, dictionary, learning, chatbot, users
 from app.services.detector_instance import detector
 
 app = FastAPI(title="IsyaraLive API", version="2.0.0")
@@ -41,6 +41,7 @@ app.include_router(leaderboard.router)
 app.include_router(dictionary.router)
 app.include_router(learning.router)
 app.include_router(chatbot.router)
+app.include_router(users.router)
 
 # Detector real-time (LSTM) di-import sebagai singleton dari detector_instance
 
