@@ -68,6 +68,28 @@ def _community_source(word: str, db: Session) -> Optional[dict]:
     }
 
 
+EKSTENSI_VIDEO = (".mp4", ".mov", ".webm", ".m4v", ".mkv")
+
+
+def _cari_file_huruf(letter: str) -> Optional[str]:
+    """
+    Cari file video untuk satu huruf TANPA peduli huruf besar/kecil dan
+    ekstensi. Linux case-sensitive, jadi 'A.mp4' tidak akan ketemu kalau
+    dicari sebagai 'a.mp4' — ini sumber bug yang bikin available selalu
+    False padahal file-nya jelas ada.
+
+    Return: nama file apa adanya (mis. "A.mp4"), atau None kalau tidak ada.
+    """
+    if not os.path.isdir(ALPHABET_DIR):
+        return None
+    target = letter.lower()
+    for filename in os.listdir(ALPHABET_DIR):
+        stem, ext = os.path.splitext(filename)
+        if stem.lower() == target and ext.lower() in EKSTENSI_VIDEO:
+            return filename
+    return None
+
+
 def get_alphabet_video(letter: str) -> str:
     """
     URL video ejaan satu huruf.
@@ -77,20 +99,23 @@ def get_alphabet_video(letter: str) -> str:
     signature yang sama seperti versi sebelumnya supaya dictionary.py
     tidak perlu diubah.
     """
-    return f"{ALPHABET_URL_BASE}/{letter.lower()}.mp4"
+    filename = _cari_file_huruf(letter) or f"{letter.lower()}.mp4"
+    return f"{ALPHABET_URL_BASE}/{filename}"
 
 
 def alphabet_video_available(letter: str) -> bool:
     """Cek file video huruf benar-benar ada di assets/alphabet/."""
-    return os.path.isfile(os.path.join(ALPHABET_DIR, f"{letter.lower()}.mp4"))
+    return _cari_file_huruf(letter) is not None
 
 
 def _alphabet_source(letter: str) -> dict:
-    filename = f"{letter.lower()}.mp4"
-    path = os.path.join(ALPHABET_DIR, filename)
+    filename = _cari_file_huruf(letter)
+    if filename is None:
+        # tetap kembalikan URL tebakan supaya pesan error di aplikasi jelas
+        filename = f"{letter.lower()}.mp4"
     return {
         "source": "alphabet",
-        "path": path,
+        "path": os.path.join(ALPHABET_DIR, filename),
         "url": f"{ALPHABET_URL_BASE}/{filename}",
     }
 

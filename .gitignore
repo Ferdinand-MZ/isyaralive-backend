@@ -30,26 +30,69 @@ ENV/
 # Database
 # ==========================
 database.db
+database.db.bak
 *.sqlite3
 *.db-journal
 
 # ==========================
-# Uploaded user content (video kontribusi SignHub)
+# Konten upload pengguna (video kontribusi SignHub)
+# Tidak ikut repo: ini data user, bisa besar, dan berubah terus.
 # ==========================
 uploads/pending/*
 uploads/approved/*
 uploads/rejected/*
-!uploads/pending/.gitkeep
-!uploads/approved/.gitkeep
-!uploads/rejected/.gitkeep
+uploads/chat_videos/*
+!uploads/*/.gitkeep
 
 # ==========================
-# Model & dataset besar (opsional — lihat catatan di bawah)
+# ASET PERAGA — IKUT REPO
+# Video abjad A-Z dan video kamus SignPedia adalah bagian dari aplikasi,
+# bukan data user. Tanpa ini, siapa pun yang clone repo tidak bisa
+# menjalankan fitur teks-ke-gestur sama sekali.
+#
+# Tidak ada aturan ignore untuk assets/ — semua file di dalamnya ikut
+# ter-commit. Baris di bawah hanya membuang berkas sampah dari editor
+# video / OS yang sering ikut nyelip.
 # ==========================
-models/*.pt
-models/*.pkl
+assets/**/*.tmp
+assets/**/.DS_Store
+assets/**/Thumbs.db
+assets/**/*.mp4.part
+
+# Kalau ada video mentah beresolusi besar yang belum dikompres,
+# taruh di folder ini supaya tidak ikut ter-commit:
+assets/_raw/
+
+# ==========================
+# Cache hasil ekstraksi landmark
+# Bisa dibuat ulang kapan saja dengan:
+#   python scripts/build_animation_cache.py
+# Jadi tidak perlu ikut repo.
+# ==========================
+cache/
+
+# ==========================
+# Model & artefak ML
+#
+# hand_landmarker.task (7,5 MB) TIDAK ikut repo — file ini otomatis
+# terunduh sendiri saat backend pertama kali dijalankan.
+#
+# lstm_model.pt (952 KB), label_encoder.pkl (3 KB), dan model_config.json
+# IKUT repo. Ukurannya kecil, dan ketiganya wajib ada supaya backend bisa
+# jalan. Kalau di-ignore, setiap anggota tim harus menyalin manual dari
+# Drive dan gampang tertukar versi — persis masalah yang bikin backend
+# diam-diam masuk dummy mode.
+# ==========================
 models/*.task
+models/*.onnx
+models/*.h5
+models/checkpoints/
 !models/.gitkeep
+
+# ==========================
+# Notebook
+# ==========================
+.ipynb_checkpoints/
 
 # ==========================
 # Editor / OS
@@ -57,6 +100,7 @@ models/*.task
 .vscode/
 .idea/
 *.swp
+*.swo
 .DS_Store
 Thumbs.db
 
