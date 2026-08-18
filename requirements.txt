@@ -7,6 +7,8 @@ opencv-python-headless==4.9.0.80
 numpy==1.26.4
 torch>=2.9.0
 pillow>=10.0.0
+scikit-learn==1.6.1
+scipy==1.13.1
 
 # Database & Auth (baru ditambahkan untuk fitur komunitas)
 sqlalchemy==2.0.30

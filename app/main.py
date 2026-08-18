@@ -1,18 +1,26 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
+import asyncio
 import base64
 import numpy as np
 import cv2
 import json
 import os
+from typing import Optional
 
 from app.core.database import init_db
-from app.routers import auth, submissions, admin, gesture_lookup, ai, vote, leaderboard, dictionary, learning, chatbot, users
+from app.core.security import decode_access_token
+from app.routers import (
+    auth, submissions, admin, gesture_lookup, ai, vote,
+    leaderboard, dictionary, learning, chatbot, users,
+)
 from app.services.detector_instance import detector
+from app.services.stream_session import DetectionSession
+from app.services.detector import SEQUENCE_LENGTH, FEATURE_SIZE
 
-app = FastAPI(title="IsyaraLive API", version="2.0.0")
+app = FastAPI(title="IsyaraLive API", version="2.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,16 +29,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Buat tabel database saat startup
 init_db()
 
-# Static files (video approved & video alfabet fallback)
 os.makedirs("uploads/approved", exist_ok=True)
 os.makedirs("assets/alphabet", exist_ok=True)
+os.makedirs("assets/dictionary", exist_ok=True)
 app.mount("/static/approved", StaticFiles(directory="uploads/approved"), name="approved")
 app.mount("/static/alphabet", StaticFiles(directory="assets/alphabet"), name="alphabet")
+app.mount("/static/dictionary", StaticFiles(directory="assets/dictionary"), name="dictionary")
 
-# Daftarkan semua router
 app.include_router(auth.router)
 app.include_router(submissions.router)
 app.include_router(admin.router)
@@ -43,8 +50,6 @@ app.include_router(learning.router)
 app.include_router(chatbot.router)
 app.include_router(users.router)
 
-# Detector real-time (LSTM) di-import sebagai singleton dari detector_instance
-
 
 @app.get("/")
 def root():
@@ -56,52 +61,186 @@ def health():
     return {
         "status": "ok",
         "model_loaded": detector.model_loaded,
-        "classes": detector.class_names
+        "sequence_length": SEQUENCE_LENGTH,
+        "feature_size": FEATURE_SIZE,
+        "classes": detector.class_names,
     }
 
 
+# ============================================================
+# WEBSOCKET DETEKSI REAL-TIME
+#
+# Mendukung DUA mode dalam satu endpoint:
+#
+# 1. MODE LANDMARK (dianjurkan, sesuai desain sistem):
+#    MediaPipe dijalankan ON-DEVICE di Flutter, aplikasi cuma mengirim
+#    63 angka per frame. Payload ~1 KB, bukan gambar puluhan KB, sehingga
+#    latensi jauh lebih rendah dan server tidak perlu compute vision.
+#      kirim: {"landmarks": [x1,y1,z1, ... , x21,y21,z21]}   (63 angka)
+#      kirim: {"landmarks": null}  -> tangan tidak terdeteksi, buffer di-reset
+#
+# 2. MODE FRAME (fallback, kompatibel dengan client lama):
+#    Aplikasi mengirim JPEG base64, MediaPipe dijalankan di server.
+#      kirim: {"frame": "<base64 jpeg>"}
+#
+# Pesan kontrol:
+#      {"type": "reset"}  -> kosongkan buffer + transkrip (mulai kalimat baru)
+#      {"type": "ping"}   -> balasan {"type": "pong"} untuk cek koneksi
+#
+# Autentikasi opsional: /ws/detect?token=<JWT>. Kalau token dikirim dan
+# valid, user_id ikut dicatat di balasan pertama. Tanpa token, endpoint
+# tetap bisa dipakai untuk mode demo.
+# ============================================================
+
 @app.websocket("/ws/detect")
-async def websocket_detect(websocket: WebSocket):
-    """
-    WebSocket endpoint untuk deteksi gesture real-time (LSTM, buffer 15 frame).
-    Endpoint ini TIDAK pakai auth — dipakai untuk demo deteksi cepat.
-    """
+async def websocket_detect(websocket: WebSocket, token: Optional[str] = Query(default=None)):
     await websocket.accept()
-    print("Client connected")
+
+    user_id = None
+    if token:
+        payload = decode_access_token(token)
+        if payload is None:
+            await websocket.send_text(json.dumps({
+                "type": "auth_error",
+                "message": "Token tidak valid atau sudah expired",
+            }))
+            await websocket.close(code=1008)
+            return
+        user_id = payload.get("user_id")
+
+    session = DetectionSession()
+
+    await websocket.send_text(json.dumps({
+        "type": "ready",
+        "user_id": user_id,
+        "sequence_length": SEQUENCE_LENGTH,
+        "feature_size": FEATURE_SIZE,
+        "model_loaded": detector.model_loaded,
+        "accepted_modes": ["landmark", "frame"],
+    }))
 
     try:
         while True:
-            data = await websocket.receive_text()
-            payload = json.loads(data)
+            raw = await websocket.receive_text()
 
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                await websocket.send_text(json.dumps({"error": "Payload bukan JSON valid"}))
+                continue
+
+            msg_type = payload.get("type")
+            if msg_type == "ping":
+                await websocket.send_text(json.dumps({"type": "pong"}))
+                continue
+            if msg_type == "reset":
+                session.reset()
+                await websocket.send_text(json.dumps({"type": "reset_ok", "transcript": ""}))
+                continue
+
+            # ---------- MODE LANDMARK ----------
+            if "landmarks" in payload:
+                landmarks = payload.get("landmarks")
+
+                if landmarks is None:
+                    session.clear_buffer()
+                    await websocket.send_text(json.dumps({
+                        "mode": "landmark", "detected": False, "label": "",
+                        "confidence": 0.0, "buffering": False, "buffer_size": 0,
+                        "transcript": session.transcript_text(),
+                    }))
+                    continue
+
+                if not isinstance(landmarks, list) or len(landmarks) != FEATURE_SIZE:
+                    await websocket.send_text(json.dumps({
+                        "mode": "landmark", "detected": False,
+                        "error": f"'landmarks' harus list {FEATURE_SIZE} angka",
+                    }))
+                    continue
+
+                session.push(landmarks)
+                result = await _predict_from_session(session)
+                result["mode"] = "landmark"
+                await websocket.send_text(json.dumps(result))
+                continue
+
+            # ---------- MODE FRAME (fallback) ----------
             frame_b64 = payload.get("frame", "")
             if not frame_b64:
                 await websocket.send_text(json.dumps({
                     "detected": False, "label": "", "confidence": 0.0,
-                    "error": "No frame received"
+                    "error": "Kirim 'landmarks' (63 angka) atau 'frame' (base64 jpeg)",
                 }))
                 continue
 
-            img_bytes = base64.b64decode(frame_b64)
-            img_array = np.frombuffer(img_bytes, dtype=np.uint8)
-            frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-
+            frame = await asyncio.to_thread(_decode_frame, frame_b64)
             if frame is None:
                 await websocket.send_text(json.dumps({
-                    "detected": False, "label": "", "confidence": 0.0,
-                    "error": "Failed to decode image"
+                    "mode": "frame", "detected": False, "label": "", "confidence": 0.0,
+                    "error": "Gagal decode gambar",
                 }))
                 continue
 
-            result = detector.detect(frame)
+            landmark = await asyncio.to_thread(detector.extract_landmarks, frame)
+            if landmark is None:
+                session.clear_buffer()
+                await websocket.send_text(json.dumps({
+                    "mode": "frame", "detected": False, "label": "", "confidence": 0.0,
+                    "buffering": False, "buffer_size": 0, "landmarks": None,
+                    "transcript": session.transcript_text(),
+                }))
+                continue
+
+            session.push(landmark.tolist())
+            result = await _predict_from_session(session)
+            result["mode"] = "frame"
+            # landmark dikirim balik supaya Flutter bisa gambar skeleton overlay
+            result["landmarks"] = landmark.tolist()
             await websocket.send_text(json.dumps(result))
 
     except WebSocketDisconnect:
-        print("Client disconnected")
-        detector.reset_buffer()
+        pass
     except Exception as e:
-        print(f"Error: {e}")
-        await websocket.close()
+        print(f"WS error: {e}")
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+def _decode_frame(frame_b64: str):
+    try:
+        img_bytes = base64.b64decode(frame_b64)
+        img_array = np.frombuffer(img_bytes, dtype=np.uint8)
+        return cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+    except Exception:
+        return None
+
+
+async def _predict_from_session(session: DetectionSession) -> dict:
+    """Jalankan LSTM kalau buffer sudah 15 frame, lalu update transkrip."""
+    if not session.is_ready:
+        return {
+            "detected": False, "label": "", "confidence": 0.0,
+            "buffering": True, "buffer_size": session.buffer_size,
+            "transcript": session.transcript_text(),
+        }
+
+    result = await asyncio.to_thread(detector.predict_sequence, session.sequence())
+
+    is_new_word = False
+    if result.get("detected"):
+        is_new_word = session.commit(result["label"])
+    else:
+        session.commit("")
+
+    result.update({
+        "buffering": False,
+        "buffer_size": session.buffer_size,
+        "is_new_word": is_new_word,           # True saat kata resmi masuk transkrip
+        "transcript": session.transcript_text(),
+    })
+    return result
 
 
 if __name__ == "__main__":

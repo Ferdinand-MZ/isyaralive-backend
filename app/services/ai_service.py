@@ -1,3 +1,5 @@
+import json
+
 import httpx
 from fastapi import HTTPException, status
 
@@ -165,3 +167,103 @@ async def chatbot_reply(history: list[dict], user_message: str, dictionary_conte
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="AI tidak menghasilkan balasan. Coba lagi.")
 
     return reply
+
+# ============================================================
+# SARAN KATA LANJUTAN (SmartSign AI - prediksi saat jeda gestur)
+#
+# Saat pengguna berhenti sejenak di tengah percakapan, sistem menawarkan
+# 3 kata berikutnya yang paling masuk akal berdasarkan transkrip sementara.
+# Pengguna tinggal menekan salah satu, tidak perlu memperagakan gestur —
+# komunikasi jadi lebih cepat.
+#
+# PENTING: saran DIBATASI pada kosakata yang memang bisa diperagakan /
+# dikenali sistem (daftar kelas model + kamus SignPedia). Percuma
+# menyarankan kata yang tidak punya peraga gestur.
+# ============================================================
+
+SARAN_SYSTEM_PROMPT = (
+    "Anda membantu pengguna Bahasa Isyarat Indonesia (BISINDO) menyusun kalimat lebih cepat.\n"
+    "Anda menerima transkrip sementara hasil deteksi gestur (mungkin belum selesai) "
+    "dan sebuah DAFTAR KOSAKATA yang tersedia di sistem.\n\n"
+    "Tugas Anda: tebak 3 kata BERIKUTNYA yang paling mungkin ingin disampaikan pengguna.\n\n"
+    "Aturan wajib:\n"
+    "1. Semua kata yang Anda usulkan HARUS diambil persis dari DAFTAR KOSAKATA. "
+    "Dilarang mengarang kata di luar daftar.\n"
+    "2. Jangan mengulang kata yang baru saja disebut kecuali memang wajar diulang.\n"
+    "3. Urutkan dari yang paling mungkin.\n"
+    "4. Jawab HANYA dengan array JSON berisi 3 string, tanpa penjelasan, tanpa markdown. "
+    'Contoh format jawaban: ["Makan", "Minum", "Terima Kasih"]'
+)
+
+
+async def saran_kata_lanjutan(transkrip: str, kosakata: list[str], jumlah: int = 3) -> list[str]:
+    """
+    transkrip : kata-kata yang sudah terdeteksi sejauh ini, mis. "Halo nama saya"
+    kosakata  : daftar kata yang tersedia (kelas model + kamus)
+    Return    : list kata saran, sudah difilter agar pasti ada di `kosakata`.
+    """
+    if not AZURE_OPENAI_KEY or not AZURE_OPENAI_URL:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Konfigurasi Azure OpenAI belum di-set (AZURE_OPENAI_KEY / AZURE_OPENAI_URL)."
+        )
+
+    if not kosakata:
+        return []
+
+    user_content = (
+        f"DAFTAR KOSAKATA:\n{', '.join(kosakata)}\n\n"
+        f"TRANSKRIP SEMENTARA:\n{transkrip.strip() or '(belum ada kata)'}"
+    )
+
+    payload = {
+        "model": AZURE_OPENAI_MODEL,
+        "max_completion_tokens": 120,
+        "messages": [
+            {"role": "system", "content": SARAN_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                AZURE_OPENAI_URL,
+                headers={"api-key": AZURE_OPENAI_KEY, "Content-Type": "application/json"},
+                json=payload,
+            )
+    except httpx.RequestError:
+        # Saran bersifat pelengkap — jangan sampai bikin fitur utama gagal
+        return []
+
+    if response.status_code != 200:
+        return []
+
+    data = response.json()
+    try:
+        raw = data["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError):
+        return []
+
+    # Bersihkan kemungkinan pagar markdown
+    raw = raw.replace("```json", "").replace("```", "").strip()
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+
+    if not isinstance(parsed, list):
+        return []
+
+    # Cocokkan ke kosakata resmi (case-insensitive), buang duplikat
+    lookup = {k.lower(): k for k in kosakata}
+    hasil = []
+    for item in parsed:
+        if not isinstance(item, str):
+            continue
+        kata = lookup.get(item.strip().lower())
+        if kata and kata not in hasil:
+            hasil.append(kata)
+
+    return hasil[:jumlah]
