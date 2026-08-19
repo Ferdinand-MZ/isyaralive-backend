@@ -28,6 +28,10 @@ from app.services.detector_instance import detector
 
 ALPHABET_DIR = "assets/alphabet"
 
+# Animasi di bawah ini dianggap terlalu pendek untuk diperagakan dengan layak.
+# 15 frame pada 12 fps = 1,25 detik.
+BATAS_PENDEK = 15
+
 
 def collect_targets(only: str) -> list[tuple[str, str]]:
     """Return list of (label, video_path)."""
@@ -68,22 +72,51 @@ def run(only: str):
               "Isi kamus / approve kontribusi / taruh video alfabet dulu.")
         return
 
-    ok, gagal = 0, 0
+    ok = 0
+    gagal, pendek = [], []
     for label, path in targets:
         if not os.path.isfile(path):
             print(f"[SKIP] {label}: file tidak ada -> {path}")
-            gagal += 1
+            gagal.append((label, "file tidak ada"))
             continue
 
         data = extract_animation(path, detector)
         if data is None:
             print(f"[GAGAL] {label}: tidak ada tangan terdeteksi di video")
-            gagal += 1
-        else:
-            print(f"[OK]    {label}: {data['frame_count']} frame")
-            ok += 1
+            gagal.append((label, "tidak terdeteksi"))
+            continue
 
-    print(f"\nSelesai. Berhasil: {ok}, gagal/dilewati: {gagal}")
+        n = data["frame_count"]
+        cov = data.get("coverage", 1.0)
+        interp = data.get("interpolated", 0)
+
+        catatan = f"{n} frame | deteksi {cov*100:.0f}%"
+        if interp:
+            catatan += f" | {interp} frame diinterpolasi"
+
+        if n < BATAS_PENDEK:
+            print(f"[PENDEK] {label}: {catatan}")
+            pendek.append((label, n, cov))
+        else:
+            print(f"[OK]    {label}: {catatan}")
+        ok += 1
+
+    print(f"\nSelesai. Berhasil: {ok}, gagal: {len(gagal)}")
+
+    if pendek:
+        print(f"\nPERLU DIPERIKSA — animasi terlalu pendek (< {BATAS_PENDEK} frame, "
+              f"kurang dari {BATAS_PENDEK/12:.1f} detik):")
+        for label, n, cov in sorted(pendek, key=lambda x: x[1]):
+            print(f"  {label:<18} {n:>3} frame, deteksi hanya {cov*100:.0f}%")
+        print("\n  Penyebab tersering: gestur dua tangan, tangan keluar frame,")
+        print("  gerakan terlalu cepat sehingga blur, atau video memang pendek.")
+        print("  Untuk kata-kata ini pertimbangkan rekam ulang, atau tampilkan")
+        print("  video biasa lewat video_url alih-alih animasi CustomPainter.")
+
+    if gagal:
+        print("\nGAGAL TOTAL — tidak ada tangan terdeteksi sama sekali:")
+        for label, alasan in gagal:
+            print(f"  {label:<18} ({alasan})")
 
 
 if __name__ == "__main__":
