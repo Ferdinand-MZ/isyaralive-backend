@@ -7,6 +7,7 @@ from app.models.point_log import PointLog
 POINTS_SUBMISSION_APPROVED = 10
 POINTS_RECEIVED_UPVOTE = 1
 POINTS_RECEIVED_DOWNVOTE = -1
+POINTS_QUIZ_CORRECT = 2
 
 
 def add_points(db: Session, user_id: int, points: int, reason: str, submission_id: int | None = None):

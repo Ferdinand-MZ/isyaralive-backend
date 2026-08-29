@@ -12,7 +12,8 @@ from app.services.points_services import add_points, POINTS_RECEIVED_UPVOTE, POI
 router = APIRouter(prefix="/submissions", tags=["Community Voting"])
 
 
-def _vote_counts(db: Session, submission_id: int) -> tuple[int, int]:
+def get_vote_counts(db: Session, submission_id: int) -> tuple[int, int]:
+    """Hitung upvote/downvote sebuah submission. Dipakai juga di router submissions."""
     upvotes = db.query(Vote).filter(
         Vote.submission_id == submission_id, Vote.type == VoteType.upvote
     ).count()
@@ -20,6 +21,18 @@ def _vote_counts(db: Session, submission_id: int) -> tuple[int, int]:
         Vote.submission_id == submission_id, Vote.type == VoteType.downvote
     ).count()
     return upvotes, downvotes
+
+
+def get_my_vote(db: Session, user_id: int, submission_id: int) -> str | None:
+    """Vote user tertentu pada sebuah submission ("upvote"/"downvote"/None)."""
+    vote = db.query(Vote).filter(
+        Vote.user_id == user_id, Vote.submission_id == submission_id
+    ).first()
+    return vote.type.value if vote else None
+
+
+# Alias lama, biar tidak breaking kalau ada pemanggil lain yang lupa di-update.
+_vote_counts = get_vote_counts
 
 
 @router.post("/{submission_id}/vote", response_model=VoteResponse)

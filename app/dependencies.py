@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -13,6 +15,7 @@ from app.models.user import User, UserRole
 # ============================================================
 
 bearer_scheme = HTTPBearer()
+optional_bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
@@ -42,6 +45,26 @@ def get_current_user(
         )
 
     return user
+
+
+def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_bearer_scheme),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """
+    Sama seperti get_current_user, tapi tidak wajib login.
+    Dipakai di endpoint publik yang mau tetap tahu "my_vote" kalau user login,
+    tapi tetap bisa diakses tanpa token (mis. feed komunitas, detail gestur).
+    """
+    if credentials is None:
+        return None
+
+    payload = decode_access_token(credentials.credentials)
+    if payload is None:
+        return None
+
+    user_id = payload.get("user_id")
+    return db.query(User).filter(User.id == user_id).first()
 
 
 def get_current_admin(

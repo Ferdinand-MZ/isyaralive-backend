@@ -1,12 +1,13 @@
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.submission import GestureSubmission, SubmissionStatus
 from app.models.dictionary import DictionaryEntry
+from app.schemas.gesture import TextToGestureRequest
 from app.services.animation_service import extract_animation
 from app.services.detector_instance import detector
 
@@ -154,11 +155,10 @@ def resolve_word(word: str, db: Session) -> list[dict]:
 
 
 @router.post("/text-to-video")
-def text_to_gesture(text: str = Query(..., description="Teks/hasil speech-to-text yang mau diperagakan"),
-                    db: Session = Depends(get_db)):
+def text_to_gesture(data: TextToGestureRequest, db: Session = Depends(get_db)):
     """Peragaan berbasis video. Item dengan available=false berarti aset belum tersedia."""
     results = []
-    for word in text.lower().split():
+    for word in data.text.lower().split():
         results.extend(resolve_word(word, db))
 
     missing = [r["word"] for r in results if not r["available"]]
@@ -172,8 +172,7 @@ def text_to_gesture(text: str = Query(..., description="Teks/hasil speech-to-tex
 
 
 @router.post("/text-to-animation")
-def text_to_animation(text: str = Query(..., description="Teks/hasil speech-to-text yang mau diperagakan"),
-                      db: Session = Depends(get_db)):
+def text_to_animation(data: TextToGestureRequest, db: Session = Depends(get_db)):
     """
     Peragaan berbasis LANDMARK — dipakai Flutter CustomPainter untuk
     menggambar ulang gerakan tangan tanpa aset animasi buatan tangan.
@@ -192,7 +191,7 @@ def text_to_animation(text: str = Query(..., description="Teks/hasil speech-to-t
     sequence = []
     missing = []
 
-    for word in text.lower().split():
+    for word in data.text.lower().split():
         for item in resolve_word(word, db):
             animation = extract_animation(item["path"], detector) if item["available"] else None
 

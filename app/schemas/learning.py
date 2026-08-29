@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from datetime import date
 from typing import Optional, List
 
 
@@ -42,6 +43,17 @@ class OverallProgress(BaseModel):
     learned_words: int
     levels: List[LevelSummary]
 
+    # Statistik winstreak, dipakai juga di kartu 'N hari winstreak' Beranda.
+    current_streak: int = 0
+    longest_streak: int = 0
+
+
+class LearningStreak(BaseModel):
+    """Statistik winstreak belajar berdiri sendiri (kartu 'N hari winstreak' Beranda)."""
+    current_streak: int = 0
+    longest_streak: int = 0
+    last_activity_date: Optional[date] = None
+
 
 class QuizQuestion(BaseModel):
     material_id: int
@@ -57,3 +69,4 @@ class QuizSubmitRequest(BaseModel):
 class QuizSubmitResponse(BaseModel):
     correct: bool
     correct_answer: str
+    points_awarded: int = 0  # >0 kalau ini pertama kali user jawab benar utk materi ini

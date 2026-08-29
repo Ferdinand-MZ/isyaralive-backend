@@ -5,7 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.dependencies import get_current_user_optional
+from app.models.user import User
 from app.models.dictionary import DictionaryEntry, DictionaryCategory
+from app.models.learning import LearningMaterial, UserProgress
 from app.routers.gesture_lookup import get_alphabet_video
 from app.schemas.dictionary import (
     DictionaryListItem,
@@ -83,11 +86,38 @@ def list_dictionary(
 
 
 @router.get("/{entry_id}", response_model=DictionaryDetail)
-def get_dictionary_detail(entry_id: int, db: Session = Depends(get_db)):
-    """Layar 'Detail Kata' — video peraga + cara isyarat."""
+def get_dictionary_detail(
+    entry_id: int,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    """
+    Layar 'Detail Kata' — video peraga + cara isyarat.
+    Tidak wajib login, tapi kalau ada token valid, already_learned dicek
+    lewat SignPedia Belajar: dicocokkan by kata (case-insensitive) ke
+    LearningMaterial, lalu dicek UserProgress user yang login.
+    """
     entry = db.query(DictionaryEntry).filter(DictionaryEntry.id == entry_id).first()
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kata tidak ditemukan di kamus")
+
+    already_learned = False
+    if current_user:
+        material = (
+            db.query(LearningMaterial)
+            .filter(LearningMaterial.word.ilike(entry.word))
+            .first()
+        )
+        if material:
+            already_learned = (
+                db.query(UserProgress)
+                .filter(
+                    UserProgress.user_id == current_user.id,
+                    UserProgress.material_id == material.id,
+                )
+                .first()
+                is not None
+            )
 
     return DictionaryDetail(
         id=entry.id,
@@ -95,7 +125,7 @@ def get_dictionary_detail(entry_id: int, db: Session = Depends(get_db)):
         category=entry.category,
         video_path=entry.video_path,
         cara_isyarat=entry.cara_isyarat,
-        already_learned=False,
+        already_learned=already_learned,
     )
 
 

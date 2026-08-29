@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum
+from sqlalchemy import Column, Integer, String, DateTime, Date, Enum
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -21,6 +21,13 @@ class User(Base):
     role = Column(Enum(UserRole), default=UserRole.user, nullable=False)
     points = Column(Integer, default=0, nullable=False)  # poin gamifikasi SignHub
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Winstreak belajar (statistik "N hari winstreak" di Beranda).
+    # Diupdate lewat app.services.streak_service.bump_streak(), dipanggil
+    # tiap ada aktivitas belajar (materi ditandai selesai / kuis benar).
+    current_streak = Column(Integer, default=0, nullable=False)
+    longest_streak = Column(Integer, default=0, nullable=False)
+    last_activity_date = Column(Date, nullable=True)
 
     # Relasi: submission yang dibuat user ini
     submissions = relationship(

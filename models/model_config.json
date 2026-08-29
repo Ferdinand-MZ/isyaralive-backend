@@ -4,14 +4,12 @@
   "num_layers": 2,
   "dropout": 0.3,
   "fc_hidden": 64,
-  "num_classes": 50,
+  "num_classes": 46,
   "sequence_length": 15,
   "normalization": "wrist_relative_scale_invariant",
   "mirror_augmentation": true,
   "classes": [
-    "Anak",
     "Apa",
-    "Asal",
     "Ayah",
     "Bagaimana",
     "Baik",
@@ -46,7 +44,6 @@
     "Minum",
     "Nama",
     "Olahraga",
-    "Pagi",
     "Ramah",
     "Sabar",
     "Saya",
@@ -56,7 +53,6 @@
     "Senang",
     "Siang",
     "Siapa",
-    "Teman",
     "Terima Kasih",
     "Tidur"
   ]

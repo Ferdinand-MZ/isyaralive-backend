@@ -5,7 +5,7 @@ import numpy as np
 import os
 from typing import List, Optional
 
-from app.services.detector import GestureDetector
+from app.services.detector import GestureDetector, letterbox
 
 # ============================================================
 # ANIMATION SERVICE v2 — Teks/Suara -> Visualisasi Gestur
@@ -25,11 +25,13 @@ from app.services.detector import GestureDetector
 #    frame sebelum menyerah.
 # 3. DETEKSI PAKAI PADDING, BUKAN DITARIK JADI KOTAK.
 #    Resize paksa ke 640x640 mendistorsi proporsi tangan dan menurunkan
-#    tingkat deteksi pada video yang tidak persegi. Untuk animasi dipakai
-#    letterbox (padding hitam) supaya proporsi terjaga.
-#    Catatan: jalur DETEKSI REALTIME (detector.extract_landmarks) sengaja
-#    TIDAK diubah, karena model dilatih dengan resize paksa — mengubahnya
-#    akan menggeser distribusi input model.
+#    tingkat deteksi pada video yang tidak persegi. Dipakai letterbox
+#    (padding hitam) supaya proporsi terjaga — SAMA seperti yang sekarang
+#    dipakai jalur DETEKSI REALTIME (detector.extract_landmarks), lewat
+#    fungsi bersama detector.letterbox(). Sebelumnya jalur realtime sengaja
+#    dibiarkan memakai resize paksa karena model dilatih dengan distorsi
+#    itu; sekarang model sudah dilatih ulang dengan landmark letterbox
+#    (lihat machine_learning/KMIPN_fixed.ipynb), jadi kedua jalur cocok.
 # 4. LAPORAN COVERAGE.
 #    Hasil menyertakan porsi frame yang benar-benar terdeteksi, supaya
 #    video berkualitas buruk bisa ditandai dan direkam ulang.
@@ -60,30 +62,17 @@ def _cache_path(video_path: str) -> str:
     return os.path.join(CACHE_DIR, f"{_cache_key(video_path)}.json")
 
 
-def _letterbox(frame: np.ndarray, size: int = 640) -> np.ndarray:
-    """Resize ke kotak dengan padding — proporsi tangan tidak berubah."""
-    h, w = frame.shape[:2]
-    skala = size / max(h, w)
-    baru_w, baru_h = max(1, int(round(w * skala))), max(1, int(round(h * skala)))
-    kecil = cv2.resize(frame, (baru_w, baru_h))
-
-    kanvas = np.zeros((size, size, 3), dtype=frame.dtype)
-    atas = (size - baru_h) // 2
-    kiri = (size - baru_w) // 2
-    kanvas[atas:atas + baru_h, kiri:kiri + baru_w] = kecil
-    return kanvas
-
-
 def _ekstrak_landmark_padded(frame: np.ndarray, detector: GestureDetector) -> Optional[np.ndarray]:
     """
-    Sama seperti detector.extract_landmarks tapi memakai letterbox.
-    Dipakai KHUSUS untuk animasi, bukan untuk input model.
+    Sama seperti detector.extract_landmarks (keduanya pakai letterbox()
+    dari detector.py). Fungsi ini tetap dipisah karena animasi butuh
+    None-per-frame (bukan langsung dibuang) supaya bisa diinterpolasi.
     """
     if detector.landmarker is None:
         return None
     try:
         img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        img_rgb = _letterbox(img_rgb, 640)
+        img_rgb = letterbox(img_rgb, 640)
         mp_image = detector.mp.Image(
             image_format=detector.mp.ImageFormat.SRGB,
             data=img_rgb,

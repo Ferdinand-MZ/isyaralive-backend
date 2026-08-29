@@ -30,6 +30,31 @@ FEATURE_SIZE = NUM_LANDMARKS * 3   # 63
 CONFIDENCE_THRESHOLD = 0.7
 
 
+def letterbox(frame: np.ndarray, size: int = 640) -> np.ndarray:
+    """
+    Resize ke kotak dengan padding (letterbox), BUKAN resize paksa yang
+    meregangkan gambar — proporsi tangan tidak berubah.
+
+    Sampai model versi sebelumnya, notebook training memakai
+    `cv2.resize(img, (640, 640))` langsung (meregangkan rasio aspek), jadi
+    jalur ini SENGAJA dibiarkan ikut meregangkan supaya cocok dengan
+    distribusi input model. Model sudah dilatih ulang dengan landmark yang
+    diekstrak pakai letterbox (lihat machine_learning/KMIPN_fixed.ipynb,
+    cell ekstraksi utama) — jalur ini dan animation_service sekarang
+    memakai fungsi yang SAMA, supaya keduanya konsisten dengan model.
+    """
+    h, w = frame.shape[:2]
+    skala = size / max(h, w)
+    baru_w, baru_h = max(1, int(round(w * skala))), max(1, int(round(h * skala)))
+    kecil = cv2.resize(frame, (baru_w, baru_h))
+
+    kanvas = np.zeros((size, size, 3), dtype=frame.dtype)
+    atas = (size - baru_h) // 2
+    kiri = (size - baru_w) // 2
+    kanvas[atas:atas + baru_h, kiri:kiri + baru_w] = kecil
+    return kanvas
+
+
 def normalize_landmarks(seq: Sequence) -> np.ndarray:
     """seq: (15, 63) -> (15, 63), relatif wrist (translasi) + scale-invariant."""
     pts = np.asarray(seq, dtype=np.float32).reshape(SEQUENCE_LENGTH, NUM_LANDMARKS, 3)
@@ -218,7 +243,7 @@ class GestureDetector:
             return None
         try:
             img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            img_rgb = cv2.resize(img_rgb, (640, 640))
+            img_rgb = letterbox(img_rgb, 640)
             mp_image = self.mp.Image(
                 image_format=self.mp.ImageFormat.SRGB,
                 data=img_rgb

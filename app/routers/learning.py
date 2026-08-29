@@ -13,10 +13,13 @@ from app.schemas.learning import (
     LevelSummary,
     LevelDetail,
     MaterialItem,
+    LearningStreak,
     QuizQuestion,
     QuizSubmitRequest,
     QuizSubmitResponse,
 )
+from app.services.streak_service import bump_streak
+from app.services.points_services import add_points, POINTS_QUIZ_CORRECT
 
 router = APIRouter(prefix="/learning", tags=["Materi Pembelajaran"])
 
@@ -62,6 +65,20 @@ def get_overall_progress(
         total_words=total_words,
         learned_words=learned_words,
         levels=level_summaries,
+        current_streak=current_user.current_streak,
+        longest_streak=current_user.longest_streak,
+    )
+
+
+@router.get("/streak", response_model=LearningStreak)
+def get_learning_streak(
+    current_user: User = Depends(get_current_user),
+):
+    """Kartu 'N hari winstreak' di Beranda."""
+    return LearningStreak(
+        current_streak=current_user.current_streak,
+        longest_streak=current_user.longest_streak,
+        last_activity_date=current_user.last_activity_date,
     )
 
 
@@ -113,6 +130,8 @@ def mark_material_completed(
         db.add(UserProgress(user_id=current_user.id, material_id=material_id))
         db.commit()
 
+    bump_streak(db, current_user)
+
     return MaterialItem(
         id=material.id,
         order=material.order,
@@ -124,7 +143,11 @@ def mark_material_completed(
 
 
 @router.get("/quiz/{material_id}", response_model=QuizQuestion)
-def get_quiz_question(material_id: int, db: Session = Depends(get_db)):
+def get_quiz_question(
+    material_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Ambil 1 soal kuis: video gestur + 4 pilihan kata (1 benar, 3 pengecoh acak)."""
     material = db.query(LearningMaterial).filter(LearningMaterial.id == material_id).first()
     if not material:
@@ -145,11 +168,36 @@ def get_quiz_question(material_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/quiz/submit", response_model=QuizSubmitResponse)
-def submit_quiz_answer(data: QuizSubmitRequest, db: Session = Depends(get_db)):
-    """Cek jawaban kuis user."""
+def submit_quiz_answer(
+    data: QuizSubmitRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Cek jawaban kuis user. Jawaban benar menghitung winstreak, dan kalau ini
+    kali PERTAMA user benar untuk materi ini, sekaligus menandai materi
+    'Sudah Dipelajari' + memberi poin (POINTS_QUIZ_CORRECT) — supaya kuis
+    tidak bisa di-spam berulang untuk farming poin.
+    """
     material = db.query(LearningMaterial).filter(LearningMaterial.id == data.material_id).first()
     if not material:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Materi tidak ditemukan")
 
     correct = data.answer.strip().lower() == material.word.strip().lower()
-    return QuizSubmitResponse(correct=correct, correct_answer=material.word)
+    points_awarded = 0
+
+    if correct:
+        bump_streak(db, current_user)
+
+        already = (
+            db.query(UserProgress)
+            .filter(UserProgress.user_id == current_user.id, UserProgress.material_id == material.id)
+            .first()
+        )
+        if not already:
+            db.add(UserProgress(user_id=current_user.id, material_id=material.id))
+            db.commit()
+            add_points(db, current_user.id, POINTS_QUIZ_CORRECT, "quiz_correct")
+            points_awarded = POINTS_QUIZ_CORRECT
+
+    return QuizSubmitResponse(correct=correct, correct_answer=material.word, points_awarded=points_awarded)
