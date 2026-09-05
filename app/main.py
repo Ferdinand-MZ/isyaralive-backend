@@ -8,6 +8,7 @@ import numpy as np
 import cv2
 import json
 import os
+import time
 from typing import Optional
 
 from app.core.database import init_db
@@ -32,9 +33,14 @@ app.add_middleware(
 init_db()
 
 os.makedirs("uploads/approved", exist_ok=True)
+os.makedirs("uploads/pending", exist_ok=True)
 os.makedirs("assets/alphabet", exist_ok=True)
 os.makedirs("assets/dictionary", exist_ok=True)
 app.mount("/static/approved", StaticFiles(directory="uploads/approved"), name="approved")
+# Admin butuh pratinjau video yang MASIH ANTRI (belum di-approve/reject) di
+# panel moderasi, makanya folder pending juga di-mount, terpisah dari /approved
+# yang publik supaya jelas mana yang belum lolos review.
+app.mount("/static/pending", StaticFiles(directory="uploads/pending"), name="pending")
 app.mount("/static/alphabet", StaticFiles(directory="assets/alphabet"), name="alphabet")
 app.mount("/static/dictionary", StaticFiles(directory="assets/dictionary"), name="dictionary")
 
@@ -76,8 +82,20 @@ def health():
 #    MediaPipe dijalankan ON-DEVICE di Flutter, aplikasi cuma mengirim
 #    63 angka per frame. Payload ~1 KB, bukan gambar puluhan KB, sehingga
 #    latensi jauh lebih rendah dan server tidak perlu compute vision.
-#      kirim: {"landmarks": [x1,y1,z1, ... , x21,y21,z21]}   (63 angka)
+#      kirim: {"landmarks": [x1,y1,z1, ... , x21,y21,z21], "t": <epoch_ms>}
 #      kirim: {"landmarks": null}  -> tangan tidak terdeteksi, buffer di-reset
+#
+#    "t" (epoch ms saat frame DIAMBIL di device, bukan saat dikirim) bersifat
+#    OPSIONAL tapi SANGAT DIANJURKAN. Laju kirim klien di lapangan tidak
+#    pernah persis 10 fps — RTT/jarak antar-kirim WS berayun cukup jauh
+#    (device kelas menengah, jaringan jelek), padahal model dilatih pada
+#    jendela 15 frame @ 10 fps (1,5 detik) yang rata. Kalau "t" dikirim,
+#    server meng-interpolasi ulang landmark ke grid 100ms genap sebelum
+#    dipakai prediksi (lihat DetectionSession di stream_session.py), jadi
+#    rentang waktu 15 frame yang dilihat model selalu ~1,5 detik apa pun
+#    kecepatan/kestabilan kirim klien. Tanpa "t", server fallback ke
+#    perilaku lama (percaya urutan kirim apa adanya) — tetap jalan, cuma
+#    tidak dapat jaminan itu.
 #
 # 2. MODE FRAME (fallback, kompatibel dengan client lama):
 #    Aplikasi mengirim JPEG base64, MediaPipe dijalankan di server.
@@ -158,7 +176,13 @@ async def websocket_detect(websocket: WebSocket, token: Optional[str] = Query(de
                     }))
                     continue
 
-                session.push(landmarks)
+                t_ms = payload.get("t")
+                if not isinstance(t_ms, (int, float)):
+                    # Klien lama / belum kirim "t" -> fallback ke waktu
+                    # terima server (tetap lebih baik daripada tidak sama sekali).
+                    t_ms = time.time() * 1000
+
+                session.push(landmarks, t_ms)
                 result = await _predict_from_session(session)
                 result["mode"] = "landmark"
                 await websocket.send_text(json.dumps(result))
@@ -191,7 +215,10 @@ async def websocket_detect(websocket: WebSocket, token: Optional[str] = Query(de
                 }))
                 continue
 
-            session.push(landmark.tolist())
+            # Mode frame tidak punya timestamp capture dari klien -> pakai
+            # waktu terima server. Tetap membantu resampling menghadapi
+            # jitter kedatangan frame, walau tidak sepresisi mode landmark.
+            session.push(landmark.tolist(), time.time() * 1000)
             result = await _predict_from_session(session)
             result["mode"] = "frame"
             # landmark dikirim balik supaya Flutter bisa gambar skeleton overlay

@@ -120,7 +120,10 @@ async def jalankan_kamera(url: str, mode: str, token: str | None,
                 lm = None
                 if mode == "landmark":
                     lm = detector.extract_landmarks(frame)
-                    payload = {"landmarks": None if lm is None else [float(v) for v in lm]}
+                    payload = {
+                        "landmarks": None if lm is None else [float(v) for v in lm],
+                        "t": time.time() * 1000,
+                    }
                 else:
                     ok2, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                     if not ok2:
@@ -214,7 +217,10 @@ async def jalankan(url: str, frames: list, mode: str, token: str | None):
                 t_ext = time.perf_counter()
                 lm = detector.extract_landmarks(frame)
                 waktu_ekstraksi.append((time.perf_counter() - t_ext) * 1000)
-                payload = {"landmarks": None if lm is None else [float(v) for v in lm]}
+                payload = {
+                    "landmarks": None if lm is None else [float(v) for v in lm],
+                    "t": time.time() * 1000,
+                }
             else:
                 ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 if not ok:

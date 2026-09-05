@@ -29,7 +29,10 @@ SYSTEM_PROMPT = (
     "4. Gunakan Bahasa Indonesia formal namun tetap wajar untuk percakapan sehari-hari.\n"
     "5. Jangan menambahkan salam, komentar, atau penjelasan apa pun di luar kalimat hasil perbaikan.\n\n"
     "PENTING: Jawab HANYA dengan kalimat hasil perbaikan, tanpa heading, tanpa tanda kutip, "
-    "tanpa awalan seperti 'Hasil:' atau 'Berikut adalah', dan tanpa penjelasan tambahan."
+    "tanpa awalan seperti 'Hasil:' atau 'Berikut adalah', dan tanpa penjelasan tambahan. "
+    "Jangan gunakan format Markdown apa pun (tanpa **tebal**, *miring*, heading '#', bullet "
+    "'-'/'*', atau blok kode) — outputnya dibaca sebagai teks polos dan bisa langsung "
+    "di-TTS-kan, jadi simbol markdown akan terbaca/terdengar apa adanya."
 )
 
 
@@ -110,7 +113,11 @@ CHATBOT_SYSTEM_PROMPT = (
     "beri tahu pengguna kata tersebut belum ada di kamus dan sarankan gunakan ejaan alfabet.\n"
     "4. Jawab singkat, jelas, ramah, dan dalam Bahasa Indonesia.\n"
     "5. Kalau relevan, di akhir jawaban Anda boleh menyarankan 2-3 pertanyaan/kata lanjutan "
-    "yang mungkin ingin ditanyakan pengguna, tapi ini opsional dan tidak wajib."
+    "yang mungkin ingin ditanyakan pengguna, tapi ini opsional dan tidak wajib.\n\n"
+    "PENTING: Jangan gunakan format Markdown apa pun (tanpa **tebal**, *miring*, heading '#', "
+    "bullet '-'/'*', maupun blok kode ```). Jawab dengan teks polos saja — kalau perlu daftar, "
+    "tulis sebagai kalimat biasa atau penomoran '1. 2. 3.' tanpa simbol markdown lain, karena "
+    "jawaban ini ditampilkan apa adanya di chat dan bisa juga di-TTS-kan."
 )
 
 
