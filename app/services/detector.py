@@ -55,6 +55,49 @@ def letterbox(frame: np.ndarray, size: int = 640) -> np.ndarray:
     return kanvas
 
 
+def correct_aspect_ratio(landmark: Sequence, frame_w: float, frame_h: float) -> List[float]:
+    """
+    Koreksi mismatch normalisasi landmark mode "landmark" (on-device).
+
+    Training & mode "frame" (lihat letterbox() di atas) memakai landmark
+    yang diekstrak dari frame yang DIPAD jadi persegi dulu -> normalisasi
+    ISOTROPIK (x dan y sama-sama dibagi sisi persegi S).
+
+    Plugin MediaPipe di HP (mode "landmark") menormalisasi langsung dari
+    frame kamera asli yang umumnya TIDAK persegi -> ANISOTROPIK (x dibagi
+    lebar frame, y dibagi tinggi frame). Kalau dibiarkan, sumbu yang lebih
+    pendek (yang kena padding di letterbox) meregang/menyusut dibanding
+    yang dilihat model saat training -> distorsi geometris sistematis,
+    cukup besar untuk bikin gestur mirip tertukar (mis. landmark frame
+    640x480 membuat sumbu Y meregang 480/640 = 0,75x kalau tidak dikoreksi).
+
+    `frame_w`/`frame_h` = ukuran frame kamera ASLI (piksel) yang dipakai
+    device untuk landmark ini (BUKAN 640 letterbox), dikirim device lewat
+    field "frame_width"/"frame_height" di payload landmark. Offset padding
+    letterbox sengaja tidak direplikasi di sini karena itu konstanta per
+    sumbu yang otomatis hilang lewat pengurangan wrist di
+    normalize_landmarks() -- cuma faktor skalanya yang perlu dikoreksi.
+
+    Kalau frame_w/frame_h tidak dikirim (klien lama), landmark dikembalikan
+    apa adanya (tidak ada koreksi) supaya tidak breaking change.
+    """
+    if not frame_w or not frame_h:
+        return list(landmark)
+
+    pts = np.asarray(landmark, dtype=np.float32).reshape(NUM_LANDMARKS, 3).copy()
+    frame_w = float(frame_w)
+    frame_h = float(frame_h)
+
+    if frame_w >= frame_h:
+        # Landscape: lebar jadi acuan (sisi panjang letterbox), tinggi yang di-pad.
+        pts[:, 1] *= (frame_h / frame_w)
+    else:
+        # Portrait: tinggi jadi acuan, lebar yang di-pad.
+        pts[:, 0] *= (frame_w / frame_h)
+
+    return pts.reshape(-1).tolist()
+
+
 def normalize_landmarks(seq: Sequence) -> np.ndarray:
     """seq: (15, 63) -> (15, 63), relatif wrist (translasi) + scale-invariant."""
     pts = np.asarray(seq, dtype=np.float32).reshape(SEQUENCE_LENGTH, NUM_LANDMARKS, 3)

@@ -19,7 +19,7 @@ from app.routers import (
 )
 from app.services.detector_instance import detector
 from app.services.stream_session import DetectionSession
-from app.services.detector import SEQUENCE_LENGTH, FEATURE_SIZE
+from app.services.detector import SEQUENCE_LENGTH, FEATURE_SIZE, correct_aspect_ratio
 
 app = FastAPI(title="IsyaraLive API", version="2.1.0")
 
@@ -82,8 +82,21 @@ def health():
 #    MediaPipe dijalankan ON-DEVICE di Flutter, aplikasi cuma mengirim
 #    63 angka per frame. Payload ~1 KB, bukan gambar puluhan KB, sehingga
 #    latensi jauh lebih rendah dan server tidak perlu compute vision.
-#      kirim: {"landmarks": [x1,y1,z1, ... , x21,y21,z21], "t": <epoch_ms>}
+#      kirim: {"landmarks": [x1,y1,z1, ... , x21,y21,z21], "t": <epoch_ms>,
+#               "frame_width": <lebar_piksel_frame_kamera>,
+#               "frame_height": <tinggi_piksel_frame_kamera>}
 #      kirim: {"landmarks": null}  -> tangan tidak terdeteksi, buffer di-reset
+#
+#    "frame_width"/"frame_height" (resolusi ASLI frame kamera di device saat
+#    landmark ini diekstrak, BUKAN 640) bersifat OPSIONAL tapi SANGAT
+#    DIANJURKAN. Training & mode "frame" menormalisasi landmark dari frame
+#    yang dipad jadi persegi dulu (isotropik), sedangkan plugin MediaPipe
+#    di device menormalisasi langsung dari frame kamera asli yang biasanya
+#    tidak persegi (anisotropik) -- kalau tidak dikoreksi, sumbu yang lebih
+#    pendek meregang/menyusut dan gestur mirip bisa tertukar. Kalau kedua
+#    field ini dikirim, server mengoreksinya (lihat correct_aspect_ratio()
+#    di services/detector.py) sebelum dipakai prediksi. Tanpa keduanya,
+#    server fallback ke perilaku lama (tidak ada koreksi).
 #
 #    "t" (epoch ms saat frame DIAMBIL di device, bukan saat dikirim) bersifat
 #    OPSIONAL tapi SANGAT DIANJURKAN. Laju kirim klien di lapangan tidak
@@ -181,6 +194,13 @@ async def websocket_detect(websocket: WebSocket, token: Optional[str] = Query(de
                     # Klien lama / belum kirim "t" -> fallback ke waktu
                     # terima server (tetap lebih baik daripada tidak sama sekali).
                     t_ms = time.time() * 1000
+
+                # Koreksi mismatch normalisasi isotropik (training/letterbox)
+                # vs anisotropik (MediaPipe on-device) -- lihat correct_aspect_ratio().
+                # No-op kalau device belum kirim frame_width/frame_height.
+                landmarks = correct_aspect_ratio(
+                    landmarks, payload.get("frame_width"), payload.get("frame_height")
+                )
 
                 session.push(landmarks, t_ms)
                 result = await _predict_from_session(session)
