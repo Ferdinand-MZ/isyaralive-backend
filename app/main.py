@@ -185,10 +185,21 @@ async def websocket_detect(websocket: WebSocket, token: Optional[str] = Query(de
                 landmarks = payload.get("landmarks")
 
                 if landmarks is None:
-                    session.clear_buffer()
+                    # Tangan tidak terdeteksi pada frame ini. JANGAN langsung
+                    # membuang buffer: satu frame meleset (blur saat tangan
+                    # bergerak) tidak berarti pengguna berhenti berisyarat.
+                    # DetectionSession yang memutuskan lewat masa tenggang.
+                    t_ms = payload.get("t")
+                    session.hand_lost(t_ms if isinstance(t_ms, (int, float)) else time.time() * 1000)
+                    tersisa = session.buffer_size
                     await websocket.send_text(json.dumps({
                         "mode": "landmark", "detected": False, "label": "",
-                        "confidence": 0.0, "buffering": False, "buffer_size": 0,
+                        "confidence": 0.0,
+                        # Selama kemajuan masih tersimpan, klien tetap
+                        # diberi tahu "sedang merekam" supaya bar tidak
+                        # berkedip ke nol lalu naik lagi.
+                        "buffering": tersisa > 0,
+                        "buffer_size": tersisa,
                         "transcript": session.transcript_text(),
                     }))
                     continue
@@ -238,10 +249,15 @@ async def websocket_detect(websocket: WebSocket, token: Optional[str] = Query(de
 
             landmark = await asyncio.to_thread(detector.extract_landmarks, frame)
             if landmark is None:
-                session.clear_buffer()
+                # Sama seperti mode landmark: satu frame tanpa tangan belum
+                # tentu berarti berhenti berisyarat. Mode frame JUSTRU paling
+                # sering kena — lajunya rendah dan gambarnya lebih blur, jadi
+                # tanpa masa tenggang buffer nyaris tidak pernah penuh.
+                session.hand_lost(time.time() * 1000)
+                tersisa = session.buffer_size
                 await websocket.send_text(json.dumps({
                     "mode": "frame", "detected": False, "label": "", "confidence": 0.0,
-                    "buffering": False, "buffer_size": 0, "landmarks": None,
+                    "buffering": tersisa > 0, "buffer_size": tersisa, "landmarks": None,
                     "transcript": session.transcript_text(),
                 }))
                 continue

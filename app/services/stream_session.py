@@ -47,9 +47,41 @@ FRAME_INTERVAL_MS = 1000 // TARGET_FPS  # 100ms, harus sama dengan asumsi traini
 # histori lama dibuang daripada diinterpolasi paksa melintasi jeda itu.
 MAX_GAP_MS = SEQUENCE_LENGTH * FRAME_INTERVAL_MS * 2  # 3000ms
 
-# Histori mentah yang disimpan dibatasi seperlunya (jendela + sedikit slack)
-# supaya deque tidak tumbuh tanpa batas kalau klien mengirim sangat cepat.
-_RAW_WINDOW_MS = SEQUENCE_LENGTH * FRAME_INTERVAL_MS + FRAME_INTERVAL_MS
+# ============================================================
+# TOLERANSI TANGAN HILANG SESAAT
+#
+# MASALAH (terlihat sebagai bar hijau naik-turun-naik terus):
+# MediaPipe sesekali GAGAL menemukan tangan pada satu frame — biasa terjadi
+# justru saat tangan sedang BERGERAK (motion blur), padahal gerakan itulah
+# yang mau dideteksi. Versi lama langsung membuang SELURUH histori begitu
+# ada satu frame tanpa tangan, jadi kemajuan 1,5 detik hilang hanya karena
+# satu frame meleset. Pada mode frame yang lajunya ~4 fps, satu kegagalan
+# tiap 5 frame sudah cukup membuat buffer TIDAK PERNAH penuh — pengguna
+# melihat bar naik sedikit, jatuh ke nol, naik lagi, dan prediksi nyaris
+# tidak pernah keluar.
+#
+# SOLUSI: beri masa tenggang. Selama tangan hilangnya lebih singkat dari
+# ini, histori DIPERTAHANKAN — resampler memang sudah bisa menjembatani
+# lubang kecil lewat interpolasi. Baru kalau tangan benar-benar pergi
+# (lebih lama dari ini), histori dibuang.
+#
+# 400ms dipilih supaya menutup 1 frame meleset pada 2,5 fps dan sampai 4
+# frame pada 10 fps, tapi tetap jauh di bawah panjang jendela 1,5 detik —
+# jadi bagian yang "ditebak" interpolasi tidak pernah mendominasi jendela.
+HAND_LOST_GRACE_MS = 400
+
+# Histori mentah yang disimpan dibatasi seperlunya supaya deque tidak tumbuh
+# tanpa batas kalau klien mengirim sangat cepat.
+#
+# Slack-nya SENGAJA selebar masa tenggang tangan hilang: kalau cuma pas-pasan
+# 1,6 detik, satu frame yang meleset meninggalkan lubang di tepi lama histori,
+# sampel tertua ikut terbuang, dan jendela 1,4 detik jadi tidak tertutup —
+# buffer yang tadinya penuh turun sebentar ke ~13 lalu naik lagi. Menyimpan
+# sedikit lebih panjang membuat bar tetap mantap. Biayanya sepele: pada 10 fps
+# ini cuma ~20 sampel berisi 63 angka.
+_RAW_WINDOW_MS = (
+    SEQUENCE_LENGTH * FRAME_INTERVAL_MS + HAND_LOST_GRACE_MS + FRAME_INTERVAL_MS
+)
 
 RawSample = Tuple[float, List[float]]
 
@@ -73,6 +105,10 @@ class DetectionSession:
         self._raw: deque[RawSample] = deque()
         self._last_t: Optional[float] = None
 
+        # Kapan terakhir kali tangan BENAR-BENAR terlihat — dasar masa
+        # tenggang HAND_LOST_GRACE_MS (lihat hand_lost()).
+        self._last_seen_t: Optional[float] = None
+
     # ---------------- buffer ----------------
     def push(self, landmark: Optional[Sequence], t_ms: Optional[float] = None) -> None:
         """
@@ -85,12 +121,13 @@ class DetectionSession:
         supaya tidak ada breaking change untuk klien yang belum update.
         """
         if landmark is None:
-            self.clear_buffer()
+            self.hand_lost(t_ms)
             return
         if len(landmark) != FEATURE_SIZE:
             raise ValueError(f"Landmark harus {FEATURE_SIZE} angka, diterima {len(landmark)}")
 
         landmark = [float(v) for v in landmark]
+        self._last_seen_t = t_ms if t_ms is not None else self._last_seen_t
 
         if t_ms is None:
             # Tanpa timestamp, tidak ada dasar buat resampling -> fallback
@@ -104,6 +141,25 @@ class DetectionSession:
         if self._cooldown > 0:
             self._cooldown -= 1
 
+    def hand_lost(self, t_ms: Optional[float] = None) -> None:
+        """
+        Laporkan satu frame TANPA tangan terdeteksi.
+
+        Histori TIDAK langsung dibuang: selama tangan hilangnya masih dalam
+        HAND_LOST_GRACE_MS, kemajuan buffer dipertahankan supaya satu frame
+        yang meleset (motion blur — hal biasa saat tangan bergerak) tidak
+        menghapus 1,5 detik kemajuan. Lihat catatan di HAND_LOST_GRACE_MS.
+
+        Tanpa timestamp (klien lama) tidak ada dasar mengukur lamanya hilang,
+        jadi perilaku lama dipakai: langsung reset.
+        """
+        if t_ms is None or self._last_seen_t is None:
+            self.clear_buffer()
+            return
+
+        if (float(t_ms) - self._last_seen_t) > HAND_LOST_GRACE_MS:
+            self.clear_buffer()
+
     def _push_raw(self, landmark: List[float], t_ms: float) -> None:
         # Jam klien kadang mundur/lompat (misal NTP sync) -> paksa maju
         # sedikit biar interpolasi tidak dapat rentang waktu negatif/nol.
@@ -111,8 +167,13 @@ class DetectionSession:
             t_ms = self._last_t + 1.0
 
         if self._raw and (t_ms - self._raw[-1][0]) > MAX_GAP_MS:
-            # Jeda kelewat lama dianggap gestur baru -> histori lama basi
+            # Jeda kelewat lama dianggap gestur baru -> histori lama basi.
+            # `self.buffer` WAJIB ikut dikosongkan: kalau tidak, ia masih
+            # memegang 15 frame dari SEBELUM jeda, sehingga is_ready tetap
+            # True dan server memprediksi dari data basi — bar terlihat penuh
+            # dan diam padahal data barunya baru satu frame.
             self._raw.clear()
+            self.buffer.clear()
 
         self._raw.append((t_ms, landmark))
         self._last_t = t_ms
@@ -133,7 +194,11 @@ class DetectionSession:
                    for i in range(SEQUENCE_LENGTH)]
 
         if self._raw[0][0] > targets[0]:
-            return  # histori belum menutupi seluruh jendela 1,5 detik
+            # Histori belum menutupi seluruh jendela 1,5 detik. Buffer lama
+            # (kalau ada) sudah tidak mewakili jendela sekarang, jadi harus
+            # dikosongkan — bukan dibiarkan supaya "kelihatan siap".
+            self.buffer.clear()
+            return
 
         self.buffer = deque(
             (self._interpolate(t) for t in targets),
@@ -176,8 +241,14 @@ class DetectionSession:
         # Belum cukup histori buat resample penuh -> kasih perkiraan progres
         # berdasarkan rentang waktu yang sudah tertampung, biar klien tetap
         # dapat indikator "buffering" yang masuk akal.
+        #
+        # Dihitung sebagai PORSI dari jendela yang dibutuhkan, bukan
+        # "jumlah frame yang masuk": klien yang lambat mengirim tiap ~250ms
+        # akan membuat hitungan per-frame melompat 1->3->6, terlihat seperti
+        # bar yang tersendat. Porsi waktu naik mulus berapa pun laju kirimnya.
         span_ms = self._raw[-1][0] - self._raw[0][0]
-        return min(SEQUENCE_LENGTH, int(span_ms // FRAME_INTERVAL_MS) + 1)
+        dibutuhkan = (SEQUENCE_LENGTH - 1) * FRAME_INTERVAL_MS  # 1400ms
+        return max(1, min(SEQUENCE_LENGTH, int(SEQUENCE_LENGTH * span_ms / dibutuhkan)))
 
     def sequence(self) -> List[List[float]]:
         return list(self.buffer)
@@ -186,6 +257,7 @@ class DetectionSession:
         self.buffer.clear()
         self._raw.clear()
         self._last_t = None
+        self._last_seen_t = None
         self._candidate = None
         self._candidate_count = 0
 
