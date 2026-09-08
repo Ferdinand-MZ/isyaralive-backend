@@ -1,5 +1,4 @@
 import os
-import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
@@ -10,52 +9,116 @@ from app.core.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.chat import ChatConversation, ChatMessage, MessageRole
-from app.models.dictionary import DictionaryEntry
 from app.schemas.chat import ChatReplyResponse, ChatHistoryResponse, ChatMessageOut, DictionaryMatchInfo
 from app.services.ai_service import chatbot_reply
+from app.services.kamus_match import cari_entri, ekstrak_kata_tanya
+from app.services.wikipedia_service import cari_ringkasan
 from app.services.video_gloss_services import extract_glosses_from_video
 from app.services.detector_instance import detector
-from app.routers.gesture_lookup import get_alphabet_video
 
 router = APIRouter(prefix="/ai/chatbot", tags=["AI - Chatbot (SmartSign AI)"])
 
 UPLOAD_CHAT_VIDEO_DIR = "uploads/chat_videos"
 os.makedirs(UPLOAD_CHAT_VIDEO_DIR, exist_ok=True)
 
-# Pola sederhana buat deteksi "ini pertanyaan soal arti/kosakata" -> trigger integrasi SignPedia
-LOOKUP_PATTERNS = [
-    r"^apa\s+(arti|itu|makna)\s+(.+)$",
-    r"^arti\s+(.+)$",
-    r"^makna\s+(.+)$",
-    r"^cara\s+isyarat\s+(.+)$",
-]
+# Batas panjang penjelasan yang ikut dikirim ke AI sebagai konteks.
+MAKS_MAKNA_KONTEKS = 700
 
+async def _lookup_dictionary(word: str, db: Session) -> DictionaryMatchInfo:
+    """
+    Integrasi SignPedia: cari peraga isyarat di kamus, DAN cari makna katanya.
 
-def _try_extract_lookup_word(message: str) -> Optional[str]:
-    """Kalau pesan user berpola pertanyaan kosakata, ambil kata yang ditanyakan."""
-    text = message.strip().lower().rstrip("?.! ")
-    for pattern in LOOKUP_PATTERNS:
-        m = re.match(pattern, text)
-        if m:
-            return m.groups()[-1].strip()
-    return None
+    Dua hal yang sengaja dipisah (lihat DictionaryMatchInfo):
+      1. PERAGA ISYARAT — hanya dari kamus SignPedia kita sendiri. Pencocokan
+         dilakukan `kamus_match.cari_entri` yang toleran terhadap beda huruf
+         besar/kecil, spasi, dan kata sebagian; ini yang dulu bikin kata yang
+         jelas ADA di kamus malah dinyatakan tidak ada lalu dibalas ejaan abjad.
+      2. MAKNA + FOTO — dari kolom kamus kalau sudah diisi, kalau belum diambil
+         dari Wikipedia. Jadi kata seperti "keju" tetap dapat penjelasan dan
+         foto walau peraga isyaratnya memang belum ada.
+    """
+    entry = cari_entri(db, word)
 
+    meaning = entry.meaning if entry else None
+    illustration = entry.illustration_path if entry else None
+    source = entry.source if entry else None
 
-def _lookup_dictionary(word: str, db: Session) -> DictionaryMatchInfo:
-    """Integrasi SignPedia: cari kata di kamus, fallback ejaan alfabet kalau gak ada."""
-    entry = db.query(DictionaryEntry).filter(DictionaryEntry.word.ilike(word)).first()
+    # Lengkapi dari Wikipedia HANYA bila kamus belum punya penjelasannya —
+    # konten kurasi editorial selalu menang atas sumber luar.
+    if not (meaning or "").strip():
+        ringkasan = await cari_ringkasan(entry.word if entry else word)
+        if ringkasan:
+            meaning = ringkasan["makna"]
+            illustration = illustration or ringkasan["foto_url"]
+            source = source or ringkasan["sumber"]
+
+            # Simpan ke kamus supaya pencarian berikutnya instan dan layar
+            # "Makna Kata" (GET /dictionary/{id}/meaning) ikut terisi.
+            if entry:
+                entry.meaning = meaning
+                entry.illustration_path = entry.illustration_path or ringkasan["foto_url"]
+                entry.source = entry.source or ringkasan["sumber"]
+                db.commit()
 
     if entry:
         return DictionaryMatchInfo(
             found=True,
             word=entry.word,
             video_path=entry.video_path,
-            meaning=entry.meaning,
-            illustration_path=entry.illustration_path,
+            meaning=meaning,
+            illustration_path=illustration,
+            source=source,
         )
 
     letters = [ch.upper() for ch in word if ch.isalpha()]
-    return DictionaryMatchInfo(found=False, word=word, alphabet_letters=letters)
+    return DictionaryMatchInfo(
+        found=False,
+        word=word,
+        meaning=meaning,
+        illustration_path=illustration,
+        source=source,
+        alphabet_letters=letters,
+    )
+
+
+def _konteks_kamus(match: DictionaryMatchInfo) -> str:
+    """
+    Rakit "KONTEKS KAMUS" yang dibaca AI.
+
+    Ditulis eksplisit sebagai dua baris terpisah supaya AI tidak lagi
+    mencampuradukkan "peraga isyaratnya belum ada" dengan "katanya tidak punya
+    arti" — dua hal yang benar-benar berbeda bagi pengguna.
+    """
+    baris = [f'KATA YANG DITANYAKAN: {match.word}']
+
+    if match.found:
+        baris.append(
+            "PERAGA ISYARAT BISINDO: TERSEDIA di kamus SignPedia "
+            "(video peraga sudah ditampilkan otomatis di bawah jawaban Anda)."
+        )
+    else:
+        ejaan = "-".join(match.alphabet_letters) or "(tidak ada huruf)"
+        baris.append(
+            "PERAGA ISYARAT BISINDO: BELUM ADA di kamus SignPedia. "
+            f"Alternatifnya dieja per huruf: {ejaan}."
+        )
+
+    if (match.meaning or "").strip():
+        sumber = f" (sumber: {match.source})" if match.source else ""
+        # Ringkasan Wikipedia bisa beberapa paragraf. AI cuma butuh intinya
+        # untuk menjawab singkat, jadi dipotong supaya prompt tetap hemat —
+        # teks utuhnya tetap tersimpan di kamus untuk layar "Makna Kata".
+        makna = match.meaning.strip()
+        if len(makna) > MAKS_MAKNA_KONTEKS:
+            makna = makna[:MAKS_MAKNA_KONTEKS].rsplit(" ", 1)[0] + " …"
+        baris.append(f"ARTI KATA{sumber}: {makna}")
+    else:
+        baris.append(
+            "ARTI KATA: tidak tersedia di data kami — jelaskan dari pengetahuan "
+            "Anda sendiri secara singkat dan akurat."
+        )
+
+    return "\n".join(baris)
 
 
 def _get_or_create_conversation(db: Session, user: User, conversation_id: Optional[int]) -> ChatConversation:
@@ -111,19 +174,10 @@ async def send_message(
     # Cek apakah ini pertanyaan kosakata -> integrasi SignPedia
     dictionary_match = None
     dictionary_context_str = None
-    lookup_word = _try_extract_lookup_word(user_text)
+    lookup_word = ekstrak_kata_tanya(user_text)
     if lookup_word:
-        dictionary_match = _lookup_dictionary(lookup_word, db)
-        if dictionary_match.found:
-            dictionary_context_str = (
-                f"Kata '{dictionary_match.word}' DITEMUKAN di kamus SignPedia. "
-                f"Pengertian: {dictionary_match.meaning or '(belum ada deskripsi)'}"
-            )
-        else:
-            dictionary_context_str = (
-                f"Kata '{dictionary_match.word}' TIDAK ditemukan di kamus SignPedia. "
-                f"Sarankan pengguna gunakan ejaan alfabet: {'-'.join(dictionary_match.alphabet_letters)}"
-            )
+        dictionary_match = await _lookup_dictionary(lookup_word, db)
+        dictionary_context_str = _konteks_kamus(dictionary_match)
 
     # Ambil riwayat percakapan sebelumnya sebagai konteks
     history = [

@@ -4,12 +4,23 @@ from typing import Optional, List
 
 
 class DictionaryMatchInfo(BaseModel):
-    """Disisipkan di respons kalau chatbot mendeteksi ini pencarian kosakata (integrasi SignPedia)."""
+    """
+    Disisipkan di respons kalau chatbot mendeteksi ini pencarian kosakata
+    (integrasi SignPedia).
+
+    PENTING — `found` dan `meaning` menjawab DUA pertanyaan berbeda:
+      - `found`   : apakah PERAGA ISYARAT-nya ada di kamus SignPedia.
+      - `meaning` : apa ARTI katanya dalam Bahasa Indonesia.
+    Keduanya bisa terisi sendiri-sendiri. Kata "keju" punya makna & foto
+    (dari Wikipedia) walau peraga isyaratnya belum ada di kamus, dan itu
+    tetap jawaban yang berguna — bukan sekadar "belum tersedia".
+    """
     found: bool
     word: str
     video_path: Optional[str] = None
     meaning: Optional[str] = None
-    illustration_path: Optional[str] = None
+    illustration_path: Optional[str] = None   # foto benda/konsep yang dimaksud
+    source: Optional[str] = None              # asal makna & foto, mis. Wikipedia
     alphabet_letters: List[str] = []  # fallback ejaan kalau found=False
 
 

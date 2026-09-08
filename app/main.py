@@ -34,13 +34,24 @@ init_db()
 
 os.makedirs("uploads/approved", exist_ok=True)
 os.makedirs("uploads/pending", exist_ok=True)
+os.makedirs("uploads/rejected", exist_ok=True)
 os.makedirs("assets/alphabet", exist_ok=True)
 os.makedirs("assets/dictionary", exist_ok=True)
+
+# PEMETAAN yang dipegang aplikasi: video_path di database selalu berbentuk
+# `uploads/<status>/<berkas>`, dan tiap folder status punya mount sendiri
+# dengan nama yang SAMA — `uploads/pending/x.mp4` -> `/static/pending/x.mp4`.
+# Flutter menurunkan URL-nya dari aturan itu (lihat core/utils/media_url.dart),
+# jadi jangan mengubah nama mount tanpa mengubah sisi aplikasi.
 app.mount("/static/approved", StaticFiles(directory="uploads/approved"), name="approved")
 # Admin butuh pratinjau video yang MASIH ANTRI (belum di-approve/reject) di
 # panel moderasi, makanya folder pending juga di-mount, terpisah dari /approved
 # yang publik supaya jelas mana yang belum lolos review.
 app.mount("/static/pending", StaticFiles(directory="uploads/pending"), name="pending")
+# Kontributor tetap perlu melihat ulang video yang DITOLAK di "Kontribusi Saya"
+# supaya tahu apa yang harus diperbaiki sebelum mengunggah lagi. Tanpa mount ini
+# kartunya tampil sebagai video rusak, bukan sebagai bahan evaluasi.
+app.mount("/static/rejected", StaticFiles(directory="uploads/rejected"), name="rejected")
 app.mount("/static/alphabet", StaticFiles(directory="assets/alphabet"), name="alphabet")
 app.mount("/static/dictionary", StaticFiles(directory="assets/dictionary"), name="dictionary")
 

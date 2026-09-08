@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.dictionary import DictionaryEntry, DictionaryCategory
 from app.models.learning import LearningMaterial, UserProgress
 from app.routers.gesture_lookup import get_alphabet_video
+from app.services.wikipedia_service import cari_ringkasan
 from app.schemas.dictionary import (
     DictionaryListItem,
     DictionaryDetail,
@@ -130,11 +131,31 @@ def get_dictionary_detail(
 
 
 @router.get("/{entry_id}/meaning", response_model=DictionaryMeaning)
-def get_dictionary_meaning(entry_id: int, db: Session = Depends(get_db)):
-    """Layar 'Makna Kata' — tombol 'Lihat Penjelasan'."""
+async def get_dictionary_meaning(entry_id: int, db: Session = Depends(get_db)):
+    """
+    Layar 'Makna Kata' — tombol 'Lihat Penjelasan'.
+
+    Kolom `meaning`/`illustration_path` di kamus masih kosong untuk hampir
+    semua entri (kamus kita fokus ke video peraga). Supaya layar ini tidak
+    selalu tampil "Penjelasan belum ditulis", penjelasan + foto diambil dari
+    Wikipedia saat kosong, lalu DISIMPAN ke kamus supaya kunjungan berikutnya
+    tidak perlu memanggil jaringan lagi.
+
+    Konten kurasi editorial tetap menang: kalau kolomnya sudah diisi admin,
+    Wikipedia tidak pernah dipanggil.
+    """
     entry = db.query(DictionaryEntry).filter(DictionaryEntry.id == entry_id).first()
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kata tidak ditemukan di kamus")
+
+    if not (entry.meaning or "").strip():
+        ringkasan = await cari_ringkasan(entry.word)
+        if ringkasan:
+            entry.meaning = ringkasan["makna"]
+            entry.illustration_path = entry.illustration_path or ringkasan["foto_url"]
+            entry.source = entry.source or ringkasan["sumber"]
+            db.commit()
+            db.refresh(entry)
 
     related = [w.strip() for w in entry.related_words.split(",")] if entry.related_words else []
 
