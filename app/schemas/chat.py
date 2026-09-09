@@ -11,16 +11,16 @@ class DictionaryMatchInfo(BaseModel):
     PENTING — `found` dan `meaning` menjawab DUA pertanyaan berbeda:
       - `found`   : apakah PERAGA ISYARAT-nya ada di kamus SignPedia.
       - `meaning` : apa ARTI katanya dalam Bahasa Indonesia.
-    Keduanya bisa terisi sendiri-sendiri. Kata "keju" punya makna & foto
-    (dari Wikipedia) walau peraga isyaratnya belum ada di kamus, dan itu
-    tetap jawaban yang berguna — bukan sekadar "belum tersedia".
+    Keduanya bisa terisi sendiri-sendiri. Kata "keju" punya makna (dari KBBI)
+    dan foto walau peraga isyaratnya belum ada di kamus, dan itu tetap jawaban
+    yang berguna — bukan sekadar "belum tersedia".
     """
     found: bool
     word: str
     video_path: Optional[str] = None
     meaning: Optional[str] = None
     illustration_path: Optional[str] = None   # foto benda/konsep yang dimaksud
-    source: Optional[str] = None              # asal makna & foto, mis. Wikipedia
+    source: Optional[str] = None              # asal makna & foto, mis. "KBBI — keju"
     alphabet_letters: List[str] = []  # fallback ejaan kalau found=False
 
 

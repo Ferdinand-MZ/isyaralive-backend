@@ -1,21 +1,20 @@
 """
-Sumber MAKNA + FOTO untuk kata yang ditanyakan pengguna.
+Sumber FOTO pelengkap untuk kata yang ditanyakan pengguna.
 
-Kenapa perlu: kolom `meaning` dan `illustration_path` di tabel kamus
-(DictionaryEntry) saat ini KOSONG untuk semua entri — kamus kita cuma punya
-video peraga. Padahal pengguna bertanya "apa makna keju?" dan berharap dapat
-penjelasan + foto benda yang dimaksud, bukan sekadar peraga gestur.
+Makna kata TIDAK lagi diambil dari sini — itu tugas `kbbi_service` (KBBI adalah
+rujukan resmi arti kata Bahasa Indonesia, dan kata sehari-hari seperti "halo"
+justru jatuh ke halaman disambiguasi di Wikipedia). Yang tersisa di sini hanya
+satu hal yang tidak bisa diberikan KBBI: FOTO benda/konsep yang dimaksud, untuk
+kolom `illustration_path`.
 
 Wikipedia Bahasa Indonesia dipakai karena:
   - REST API publik, TANPA API key (tidak menambah rahasia yang perlu diurus),
-  - punya ringkasan singkat (`extract`) yang pas untuk satu paragraf jawaban,
-  - punya thumbnail foto yang URL-nya bisa langsung dipakai Flutter
+  - thumbnail-nya punya URL yang bisa langsung dipakai Flutter
     (mediaUrl() meneruskan URL http/https apa adanya).
 
 PRINSIP: layanan ini SELALU boleh gagal. Tidak ada internet, Wikipedia lambat,
-kata tidak ada — semuanya mengembalikan None, dan pemanggil tetap jalan (AI
-menjawab dari pengetahuannya sendiri). Fitur chat TIDAK BOLEH ikut mati cuma
-karena pelengkap ini bermasalah.
+kata tidak ada — semuanya mengembalikan None. Foto sifatnya pelengkap: tanpa
+foto, makna dari KBBI tetap tampil.
 """
 
 import asyncio
@@ -33,55 +32,39 @@ USER_AGENT = "IsyaraLive/2.1 (https://github.com/isyaralive; kontak: tim IsyaraL
 
 TIMEOUT_DETIK = 8.0
 
-# Cache proses (bukan DB): kata -> hasil. Pertanyaan yang sama sering diulang
-# dalam satu sesi demo, dan Wikipedia tidak perlu ditanya dua kali.
-# Sengaja sederhana: dibatasi jumlahnya supaya tidak tumbuh tanpa batas.
+# Cache proses (bukan DB): kata -> URL foto. Pertanyaan yang sama sering
+# diulang dalam satu sesi demo, dan Wikipedia tidak perlu ditanya dua kali.
 #
 # ⚠️ HANYA hasil BERHASIL yang disimpan. Kegagalan sengaja TIDAK di-cache:
 # penyebabnya sering sementara (jaringan putus sesaat, Wikipedia lambat), dan
 # kalau ikut disimpan maka satu kegagalan singkat membuat kata itu kehilangan
-# makna & fotonya SELAMANYA sampai server di-restart — persis gejala "kadang
-# muncul, kadang tidak" yang paling membingungkan untuk dilacak.
-_cache: dict[str, dict] = {}
+# fotonya SELAMANYA sampai server di-restart — persis gejala "kadang muncul,
+# kadang tidak" yang paling membingungkan untuk dilacak.
+_cache: dict[str, str] = {}
 _CACHE_MAKS = 500
 
 
-def _simpan_cache(kunci: str, nilai: Optional[dict]) -> None:
-    if nilai is None:
+def _simpan_cache(kunci: str, nilai: Optional[str]) -> None:
+    if not nilai:
         return
     if len(_cache) >= _CACHE_MAKS:
         _cache.clear()
     _cache[kunci] = nilai
 
 
-def _dari_summary(data: dict) -> Optional[dict]:
+def _foto_dari_summary(data: dict) -> Optional[str]:
     """
-    Ubah balasan endpoint summary jadi bentuk internal kita.
+    Ambil URL thumbnail dari balasan endpoint summary.
 
-    Halaman bertipe 'disambiguation' SENGAJA ditolak: isinya cuma daftar
-    "X dapat merujuk pada ..." yang tidak menjelaskan apa pun, dan lebih
-    menyesatkan daripada membiarkan AI menjawab dari pengetahuannya sendiri
-    (mis. 'Halo' dan 'Terima Kasih' kena kasus ini).
+    Halaman bertipe 'disambiguation' SENGAJA ditolak: fotonya (kalau ada) milik
+    salah satu makna acak yang belum tentu yang dimaksud pengguna.
     """
     if data.get("type") == "disambiguation":
         return None
-
-    makna = (data.get("extract") or "").strip()
-    if not makna:
-        return None
-
-    foto = (data.get("thumbnail") or {}).get("source") or None
-    judul = data.get("title") or ""
-
-    return {
-        "judul": judul,
-        "makna": makna,
-        "foto_url": foto,
-        "sumber": f"Wikipedia Bahasa Indonesia — {judul}" if judul else "Wikipedia Bahasa Indonesia",
-    }
+    return (data.get("thumbnail") or {}).get("source") or None
 
 
-async def _summary(client: httpx.AsyncClient, judul: str) -> Optional[dict]:
+async def _summary(client: httpx.AsyncClient, judul: str) -> Optional[str]:
     try:
         r = await client.get(WIKI_SUMMARY_URL.format(judul=quote(judul, safe="")))
     except httpx.HTTPError:
@@ -89,7 +72,7 @@ async def _summary(client: httpx.AsyncClient, judul: str) -> Optional[dict]:
     if r.status_code != 200:
         return None
     try:
-        return _dari_summary(r.json())
+        return _foto_dari_summary(r.json())
     except ValueError:
         return None
 
@@ -121,13 +104,12 @@ async def _judul_teratas_dari_pencarian(client: httpx.AsyncClient, kata: str) ->
     return hasil[0]["title"] if hasil else None
 
 
-async def cari_ringkasan(kata: str) -> Optional[dict]:
+async def cari_foto(kata: str) -> Optional[str]:
     """
-    Ambil makna + foto untuk `kata`.
+    Ambil URL foto untuk `kata`, atau None kalau tidak ada / gagal.
 
-    Return dict {"judul", "makna", "foto_url", "sumber"} atau None kalau tidak
-    ketemu / gagal. TIDAK PERNAH melempar exception — pemanggilnya adalah alur
-    chat yang wajib tetap jalan.
+    TIDAK PERNAH melempar exception — pemanggilnya adalah alur chat yang wajib
+    tetap jalan.
     """
     kunci = kata.strip().lower()
     if not kunci:
@@ -137,7 +119,7 @@ async def cari_ringkasan(kata: str) -> Optional[dict]:
     if tersimpan is not None:
         return tersimpan
 
-    hasil = None
+    foto = None
     try:
         async with httpx.AsyncClient(
             timeout=TIMEOUT_DETIK,
@@ -145,16 +127,16 @@ async def cari_ringkasan(kata: str) -> Optional[dict]:
             headers={"User-Agent": USER_AGENT},
         ) as client:
             # 1) Tebak langsung: judul artikel sering sama dengan katanya.
-            hasil = await _summary(client, kata.strip())
+            foto = await _summary(client, kata.strip())
 
             # 2) Kalau meleset (404 / disambiguasi), baru pakai pencarian.
-            if hasil is None:
+            if foto is None:
                 judul = await _judul_teratas_dari_pencarian(client, kata.strip())
                 if judul:
-                    hasil = await _summary(client, judul)
+                    foto = await _summary(client, judul)
     except (httpx.HTTPError, asyncio.TimeoutError, OSError):
         # Offline / DNS gagal / timeout — bukan alasan untuk menggagalkan chat.
-        hasil = None
+        foto = None
 
-    _simpan_cache(kunci, hasil)
-    return hasil
+    _simpan_cache(kunci, foto)
+    return foto
