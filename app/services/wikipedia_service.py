@@ -12,6 +12,11 @@ Wikipedia Bahasa Indonesia dipakai karena:
   - thumbnail-nya punya URL yang bisa langsung dipakai Flutter
     (mediaUrl() meneruskan URL http/https apa adanya).
 
+ATURAN KETAT: foto hanya diambil kalau JUDUL ARTIKELNYA persis kata itu, dan
+pemanggil (kbbi_service) hanya meminta foto untuk kata benda. Foto yang salah
+lebih merugikan daripada tidak ada foto — pengguna menganggapnya bagian dari
+penjelasan.
+
 PRINSIP: layanan ini SELALU boleh gagal. Tidak ada internet, Wikipedia lambat,
 kata tidak ada — semuanya mengembalikan None. Foto sifatnya pelengkap: tanpa
 foto, makna dari KBBI tetap tampil.
@@ -24,7 +29,6 @@ from urllib.parse import quote
 import httpx
 
 WIKI_SUMMARY_URL = "https://id.wikipedia.org/api/rest_v1/page/summary/{judul}"
-WIKI_SEARCH_URL = "https://id.wikipedia.org/w/api.php"
 
 # Wikimedia mewajibkan User-Agent yang mengidentifikasi aplikasi pemanggil.
 # Tanpa ini permintaan bisa ditolak (403).
@@ -77,33 +81,6 @@ async def _summary(client: httpx.AsyncClient, judul: str) -> Optional[str]:
         return None
 
 
-async def _judul_teratas_dari_pencarian(client: httpx.AsyncClient, kata: str) -> Optional[str]:
-    """
-    Cari judul artikel yang paling cocok saat tebakan langsung gagal.
-
-    Contoh: pengguna menulis "sepeda motor listrik" yang bukan judul artikel
-    persis; pencarian mengembalikan judul yang benar-benar ada.
-    """
-    params = {
-        "action": "query",
-        "list": "search",
-        "srsearch": kata,
-        "srlimit": 1,
-        "format": "json",
-    }
-    try:
-        r = await client.get(WIKI_SEARCH_URL, params=params)
-    except httpx.HTTPError:
-        return None
-    if r.status_code != 200:
-        return None
-    try:
-        hasil = r.json().get("query", {}).get("search", [])
-    except ValueError:
-        return None
-    return hasil[0]["title"] if hasil else None
-
-
 async def cari_foto(kata: str) -> Optional[str]:
     """
     Ambil URL foto untuk `kata`, atau None kalau tidak ada / gagal.
@@ -126,14 +103,12 @@ async def cari_foto(kata: str) -> Optional[str]:
             follow_redirects=True,
             headers={"User-Agent": USER_AGENT},
         ) as client:
-            # 1) Tebak langsung: judul artikel sering sama dengan katanya.
+            # HANYA judul yang persis sama dengan katanya. Dulu ada cadangan
+            # "cari artikel termirip", dan itulah yang memasang poster film
+            # "Apa Artinya Cinta?" sebagai ilustrasi kata "apa": pencarian
+            # Wikipedia untuk kata umum mengembalikan judul lagu/film/album,
+            # bukan benda yang dimaksud. Lebih baik tanpa foto.
             foto = await _summary(client, kata.strip())
-
-            # 2) Kalau meleset (404 / disambiguasi), baru pakai pencarian.
-            if foto is None:
-                judul = await _judul_teratas_dari_pencarian(client, kata.strip())
-                if judul:
-                    foto = await _summary(client, judul)
     except (httpx.HTTPError, asyncio.TimeoutError, OSError):
         # Offline / DNS gagal / timeout — bukan alasan untuk menggagalkan chat.
         foto = None

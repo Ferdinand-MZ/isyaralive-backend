@@ -114,6 +114,11 @@ _POLA_PERIBAHASA = re.compile(r"<em>[^<]{0,200},\s*pb\s*</em>", re.I)
 # ("li·hat v, me·li·hat v ..."), atau sublema gabungan ("~ angin", "-- adat").
 _POLA_LEMA_LAIN = re.compile(r"<b>(?!\s*\d+\s*</b>)")
 
+# Kelas kata dicetak miring tepat sebelum makna pertama: <em>n</em>,
+# <em>v</em>, <em>pron</em>, <em>n Kim</em>. Dipakai untuk memutuskan apakah
+# kata ini pantas diberi foto.
+_POLA_KELAS = re.compile(r"<em>\s*([^<]{1,20})</em>")
+
 _PENANDA_MAKNA = "\x00"  # penanda internal batas antar-makna saat parsing
 
 
@@ -234,11 +239,15 @@ def _dari_entri(fragmen: str, kata: str) -> Optional[dict]:
     if not makna:
         return None
 
+    kelas = _POLA_KELAS.search(sisa)
     return {
         "judul": judul,
         "makna": makna,
         "foto_url": None,
         "sumber": f"KBBI — {judul}",
+        # Kelas kata KBBI ("n", "v", "pron", ...); dipakai internal untuk
+        # menentukan boleh-tidaknya mencari foto.
+        "kelas": (kelas.group(1).strip().split()[0].lower().rstrip(",") if kelas else ""),
     }
 
 
@@ -329,8 +338,8 @@ async def cari_ringkasan(kata: str) -> Optional[dict]:
     chat yang wajib tetap jalan.
 
     Fotonya bukan dari KBBI (KBBI kamus teks, tidak punya gambar) melainkan
-    dari Wikimedia; sifatnya pelengkap — gagal ambil foto tidak membatalkan
-    maknanya.
+    dari Wikimedia, dan HANYA untuk kata benda yang judul artikelnya persis
+    kata itu; sifatnya pelengkap — tidak dapat foto tidak membatalkan maknanya.
     """
     kunci = kata.strip().lower()
     if not kunci:
@@ -373,7 +382,11 @@ async def cari_ringkasan(kata: str) -> Optional[dict]:
         # Offline / DNS gagal / timeout — bukan alasan untuk menggagalkan chat.
         hasil = None
 
-    if hasil is not None:
+    if hasil is not None and hasil.get("kelas") == "n":
+        # Foto HANYA untuk kata benda. Kata kerja dan kata tugas tidak punya
+        # wujud yang bisa difoto, dan memaksakannya justru memasang gambar
+        # yang menyesatkan — "apa" pernah berilustrasi poster film
+        # "Apa Artinya Cinta?", "berdiri" berilustrasi orang berseragam.
         foto = await cari_foto(hasil["judul"] or kata.strip())
         if foto:
             hasil["foto_url"] = foto
