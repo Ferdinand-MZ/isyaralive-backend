@@ -21,7 +21,7 @@ router = APIRouter(prefix="/submissions", tags=["Community Submissions"])
 RELATED_GESTURES_LIMIT = 5
 
 
-def _to_submission_response(db: Session, submission: GestureSubmission, current_user_id: Optional[int]) -> SubmissionResponse:
+def to_submission_response(db: Session, submission: GestureSubmission, current_user_id: Optional[int]) -> SubmissionResponse:
     """Bungkus GestureSubmission jadi SubmissionResponse + ringkasan vote."""
     upvotes, downvotes = get_vote_counts(db, submission.id)
     my_vote = get_my_vote(db, current_user_id, submission.id) if current_user_id else None
@@ -77,7 +77,7 @@ def my_submissions(
         .order_by(GestureSubmission.created_at.desc())
         .all()
     )
-    return [_to_submission_response(db, s, current_user.id) for s in submissions]
+    return [to_submission_response(db, s, current_user.id) for s in submissions]
 
 
 @router.get("/", response_model=List[SubmissionResponse])
@@ -102,7 +102,7 @@ def list_submissions(
         .all()
     )
     current_user_id = current_user.id if current_user else None
-    return [_to_submission_response(db, s, current_user_id) for s in submissions]
+    return [to_submission_response(db, s, current_user_id) for s in submissions]
 
 
 @router.get("/{submission_id}", response_model=SubmissionDetailResponse)
@@ -123,7 +123,7 @@ def get_submission_detail(
         raise HTTPException(status_code=404, detail="Submission tidak ditemukan")
 
     current_user_id = current_user.id if current_user else None
-    base = _to_submission_response(db, submission, current_user_id)
+    base = to_submission_response(db, submission, current_user_id)
 
     contributor_user = submission.user
     total_contributions = (

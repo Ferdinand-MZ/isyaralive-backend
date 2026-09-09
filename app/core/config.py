@@ -18,8 +18,15 @@ DATABASE_URL = "sqlite:///./database.db"
 
 UPLOAD_DIR = "uploads"
 UPLOAD_PENDING_DIR = f"{UPLOAD_DIR}/pending"
+# Video yang sedang DIBUKA UNTUK VOTING komunitas. Folder sendiri, bukan
+# menumpang /pending, karena isinya sudah lolos verifikasi admin dan memang
+# tampil publik di feed — sedangkan /pending hanya untuk mata admin.
+UPLOAD_VOTING_DIR = f"{UPLOAD_DIR}/voting"
 UPLOAD_APPROVED_DIR = f"{UPLOAD_DIR}/approved"
 UPLOAD_REJECTED_DIR = f"{UPLOAD_DIR}/rejected"
+
+# Lama voting komunitas dibuka, dihitung sejak admin menekan "buka voting".
+VOTING_DURATION_DAYS = 7
 
 MAX_VIDEO_SIZE_MB = 50
 ALLOWED_VIDEO_EXTENSIONS = (".mp4", ".mov", ".MP4", ".MOV")
@@ -35,5 +42,5 @@ AZURE_OPENAI_URL = os.getenv("AZURE_OPENAI_URL")
 AZURE_OPENAI_MODEL = os.getenv("AZURE_OPENAI_MODEL")
 
 # Buat folder kalau belum ada
-for folder in [UPLOAD_PENDING_DIR, UPLOAD_APPROVED_DIR, UPLOAD_REJECTED_DIR]:
+for folder in [UPLOAD_PENDING_DIR, UPLOAD_VOTING_DIR, UPLOAD_APPROVED_DIR, UPLOAD_REJECTED_DIR]:
     os.makedirs(folder, exist_ok=True)

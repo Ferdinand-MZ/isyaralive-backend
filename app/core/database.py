@@ -54,6 +54,13 @@ def _migrate_sqlite_columns():
             ("longest_streak", "INTEGER DEFAULT 0"),
             ("last_activity_date", "DATE"),
         ]),
+        # Jendela voting komunitas (status "voting"). Kolom `status` sendiri
+        # TIDAK perlu diubah: SQLAlchemy menulisnya sebagai VARCHAR tanpa CHECK
+        # constraint, jadi nilai enum baru langsung sah tanpa bongkar tabel.
+        ("gesture_submissions", [
+            ("voting_started_at", "DATETIME"),
+            ("voting_ends_at", "DATETIME"),
+        ]),
     ]
 
     with engine.connect() as conn:

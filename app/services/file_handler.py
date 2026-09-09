@@ -42,6 +42,24 @@ def save_pending_video(file: UploadFile) -> str:
     return save_path
 
 
+def delete_video(current_path: str) -> bool:
+    """
+    Hapus berkas video dari disk. Dipakai saat admin MENGHAPUS submission.
+
+    Sengaja best-effort: berkas yang sudah lenyap (dihapus manual, atau sisa
+    percobaan) tidak boleh menggagalkan penghapusan barisnya di database —
+    kalau tidak, submission rusak justru mustahil dibersihkan.
+    Return True bila ada berkas yang benar-benar terhapus.
+    """
+    if not current_path:
+        return False
+    try:
+        os.remove(current_path)
+        return True
+    except (FileNotFoundError, IsADirectoryError, PermissionError):
+        return False
+
+
 def move_video(current_path: str, target_dir: str) -> str:
     """
     Pindahkan video dari satu folder ke folder lain.
