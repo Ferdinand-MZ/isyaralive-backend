@@ -31,7 +31,7 @@ class DictionaryEntry(Base):
     # Bagian "Lihat Penjelasan" / "Makna Kata"
     illustration_path = Column(String, nullable=True)      # gambar ilustrasi konsep
     meaning = Column(Text, nullable=True)                    # "Pengertian"
-    source = Column(String, nullable=True)                   # "Sumber: Wikipedia Commons"
+    source = Column(String, nullable=True)                   # asal penjelasan, mis. "KBBI — keju"
 
     related_words = Column(String, nullable=True)  # comma-separated, mis: "Klorofil,Oksigen,Tumbuhan,Glukosa"
 

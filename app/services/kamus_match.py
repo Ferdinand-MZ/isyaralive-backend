@@ -61,11 +61,27 @@ PREFIKS_PENGISI = (
 # Kata pengisi di BELAKANG, mis. "makna keju itu apa" / "arti keju dong".
 SUFIKS_PENGISI = ("itu", "dong", "ya", "sih", "kah", "apa", "gimana", "bagaimana")
 
+# Kata tunjuk yang tidak menyebut kata apa pun. "apa maksudnya isyarat ini"
+# menanyakan konteks obrolan, bukan lema "ini" — kalau tetap dicari, kamus
+# menjawab hal yang sama sekali tidak diminta.
+KATA_TUNJUK = {"ini", "itu", "tersebut", "tadi", "gitu", "begitu", "tu"}
+
+# Kata benda penanya beserta variasi yang lumrah diketik pengguna:
+#   "arti" / "artinya" / "arti kata" — bentuk ber-"-nya" ini yang dulu tidak
+# tertangkap, sehingga "apa artinya cinta" dianggap obrolan biasa dan tidak
+# pernah dicarikan maknanya di KBBI.
+_TANYA = r"(?:arti|makna|maksud|pengertian|definisi)(?:nya)?"
+
+# Kata pengisi antara "apa" dan kata penanya: "apa sih arti ...".
+_PENGISI_TANYA = r"(?:sih\s+|ya\s+|dong\s+)?"
+
 # Pola pertanyaan yang berarti "ini pencarian kosakata".
 # Kelompok TERAKHIR pada setiap pola adalah kata yang ditanyakan.
 POLA_TANYA = (
-    r"^(?:apa|apakah)\s+(?:arti|makna|maksud|pengertian|definisi)\s+(?:dari\s+)?(.+)$",
-    r"^(?:arti|makna|maksud|pengertian|definisi)\s+(?:dari\s+)?(.+)$",
+    rf"^(?:apa|apakah)\s+{_PENGISI_TANYA}{_TANYA}\s+(?:dari\s+)?(.+)$",
+    rf"^{_TANYA}\s+(?:dari\s+)?(.+)$",
+    # Susunan terbalik: "cinta artinya apa", "keju maknanya apa".
+    rf"^(.+?)\s+{_TANYA}\s+apa$",
     r"^(?:apa|apakah)\s+itu\s+(.+)$",
     r"^(?:apa|bagaimana|gimana)\s+bahasa\s+isyarat\s+(?:dari\s+|untuk\s+)?(.+)$",
     r"^(?:bagaimana|gimana)\s+(?:cara\s+)?(?:meng)?isyarat(?:kan)?\s+(.+)$",
@@ -138,6 +154,8 @@ def ekstrak_kata_tanya(pesan: str) -> Optional[str]:
             kata = bersihkan_kata(cocok.groups()[-1])
             # Pertanyaan yang terlalu panjang biasanya bukan "cari satu kata",
             # tapi pertanyaan bebas — biarkan AI menjawabnya tanpa lookup.
+            if kata and kata.lower() in KATA_TUNJUK:
+                return None
             if kata and len(kata.split()) <= 4:
                 return kata
             return None

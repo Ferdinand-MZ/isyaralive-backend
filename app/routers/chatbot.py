@@ -12,7 +12,7 @@ from app.models.chat import ChatConversation, ChatMessage, MessageRole
 from app.schemas.chat import ChatReplyResponse, ChatHistoryResponse, ChatMessageOut, DictionaryMatchInfo
 from app.services.ai_service import chatbot_reply
 from app.services.kamus_match import cari_entri, ekstrak_kata_tanya
-from app.services.wikipedia_service import cari_ringkasan
+from app.services.makna_service import cari_makna
 from app.services.video_gloss_services import extract_glosses_from_video
 from app.services.detector_instance import detector
 
@@ -33,9 +33,13 @@ async def _lookup_dictionary(word: str, db: Session) -> DictionaryMatchInfo:
          dilakukan `kamus_match.cari_entri` yang toleran terhadap beda huruf
          besar/kecil, spasi, dan kata sebagian; ini yang dulu bikin kata yang
          jelas ADA di kamus malah dinyatakan tidak ada lalu dibalas ejaan abjad.
-      2. MAKNA + FOTO — dari kolom kamus kalau sudah diisi, kalau belum diambil
-         dari Wikipedia. Jadi kata seperti "keju" tetap dapat penjelasan dan
-         foto walau peraga isyaratnya memang belum ada.
+      2. MAKNA — dari kolom kamus kalau sudah diisi, kalau belum disusun oleh
+         `makna_service` (definisi KBBI yang dirapikan Asisten AI). Jadi kata
+         seperti "keju" tetap dapat penjelasan walau peraga isyaratnya memang
+         belum ada.
+
+    FOTO tidak pernah diambil dari internet lagi; `illustration_path` hanya
+    berisi gambar yang memang disiapkan admin di kamus.
     """
     entry = cari_entri(db, word)
 
@@ -43,21 +47,20 @@ async def _lookup_dictionary(word: str, db: Session) -> DictionaryMatchInfo:
     illustration = entry.illustration_path if entry else None
     source = entry.source if entry else None
 
-    # Lengkapi dari Wikipedia HANYA bila kamus belum punya penjelasannya —
-    # konten kurasi editorial selalu menang atas sumber luar.
+    # Lengkapi HANYA bila kamus belum punya penjelasannya — konten kurasi
+    # editorial selalu menang atas sumber luar.
     if not (meaning or "").strip():
-        ringkasan = await cari_ringkasan(entry.word if entry else word)
-        if ringkasan:
-            meaning = ringkasan["makna"]
-            illustration = illustration or ringkasan["foto_url"]
-            source = source or ringkasan["sumber"]
+        penjelasan = await cari_makna(entry.word if entry else word)
+        if penjelasan:
+            meaning = penjelasan["makna"]
+            source = penjelasan["sumber"]
 
-            # Simpan ke kamus supaya pencarian berikutnya instan dan layar
-            # "Makna Kata" (GET /dictionary/{id}/meaning) ikut terisi.
+            # Simpan ke kamus supaya pencarian berikutnya instan (tidak perlu
+            # memanggil KBBI & AI lagi) dan layar "Makna Kata"
+            # (GET /dictionary/{id}/meaning) ikut terisi.
             if entry:
                 entry.meaning = meaning
-                entry.illustration_path = entry.illustration_path or ringkasan["foto_url"]
-                entry.source = entry.source or ringkasan["sumber"]
+                entry.source = source
                 db.commit()
 
     if entry:
@@ -105,9 +108,10 @@ def _konteks_kamus(match: DictionaryMatchInfo) -> str:
 
     if (match.meaning or "").strip():
         sumber = f" (sumber: {match.source})" if match.source else ""
-        # Ringkasan Wikipedia bisa beberapa paragraf. AI cuma butuh intinya
-        # untuk menjawab singkat, jadi dipotong supaya prompt tetap hemat —
-        # teks utuhnya tetap tersimpan di kamus untuk layar "Makna Kata".
+        # Penjelasan bisa memuat beberapa makna sekaligus. AI cuma butuh
+        # intinya untuk menjawab singkat, jadi dipotong supaya prompt tetap
+        # hemat — teks utuhnya tetap tersimpan di kamus untuk layar
+        # "Makna Kata".
         makna = match.meaning.strip()
         if len(makna) > MAKS_MAKNA_KONTEKS:
             makna = makna[:MAKS_MAKNA_KONTEKS].rsplit(" ", 1)[0] + " …"
