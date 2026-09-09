@@ -8,7 +8,7 @@ Cara pakai:
    Contoh isi CSV:
    word,category,video_file,cara_isyarat,illustration_file,meaning,source,related_words
    Terima Kasih,sehari-hari,terima_kasih.mp4,"Letakkan ujung jari di dekat dagu...",,"Ucapan syukur atas bantuan orang lain.",,"Tolong,Sama-sama"
-   Fotosintesis,umum,fotosintesis.mp4,"Peragakan gestur F-O-T-O...",fotosintesis.png,"Proses tumbuhan mengubah cahaya matahari...","Sumber: Wikipedia Commons","Klorofil,Oksigen,Tumbuhan,Glukosa"
+   Fotosintesis,umum,fotosintesis.mp4,"Peragakan gestur F-O-T-O...",fotosintesis.png,"Proses tumbuhan mengubah cahaya matahari...","Sumber: Tim Kurasi IsyaraLive","Klorofil,Oksigen,Tumbuhan,Glukosa"
 
    - category HARUS salah satu dari: sehari-hari, umum, emoji, angka
    - video_file & illustration_file cukup NAMA FILE saja (bukan path lengkap),

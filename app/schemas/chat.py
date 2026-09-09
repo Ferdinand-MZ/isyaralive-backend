@@ -12,15 +12,15 @@ class DictionaryMatchInfo(BaseModel):
       - `found`   : apakah PERAGA ISYARAT-nya ada di kamus SignPedia.
       - `meaning` : apa ARTI katanya dalam Bahasa Indonesia.
     Keduanya bisa terisi sendiri-sendiri. Kata "keju" punya makna (dari KBBI)
-    dan foto walau peraga isyaratnya belum ada di kamus, dan itu tetap jawaban
-    yang berguna — bukan sekadar "belum tersedia".
+    walau peraga isyaratnya belum ada di kamus, dan itu tetap jawaban yang
+    berguna — bukan sekadar "belum tersedia".
     """
     found: bool
     word: str
     video_path: Optional[str] = None
     meaning: Optional[str] = None
-    illustration_path: Optional[str] = None   # foto benda/konsep yang dimaksud
-    source: Optional[str] = None              # asal makna & foto, mis. "KBBI — keju"
+    illustration_path: Optional[str] = None   # gambar dari aset kamus (kalau admin menyiapkan)
+    source: Optional[str] = None              # asal makna, mis. "KBBI — keju, dirapikan Asisten AI"
     alphabet_letters: List[str] = []  # fallback ejaan kalau found=False
 
 

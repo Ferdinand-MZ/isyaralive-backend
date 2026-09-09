@@ -44,8 +44,6 @@ from urllib.parse import quote
 
 import httpx
 
-from app.services.wikipedia_service import cari_foto
-
 # Endpoint JSON milik laman kbbi.web.id. Akhiran acak ditiru dari lamannya
 # (dipakai untuk menembus cache di sisi mereka).
 KBBI_URL = "https://kbbi.web.id/{kata}/ajax_{acak}"
@@ -113,11 +111,6 @@ _POLA_PERIBAHASA = re.compile(r"<em>[^<]{0,200},\s*pb\s*</em>", re.I)
 # awal entri lain — lema kedua yang menumpang di blok yang sama
 # ("li·hat v, me·li·hat v ..."), atau sublema gabungan ("~ angin", "-- adat").
 _POLA_LEMA_LAIN = re.compile(r"<b>(?!\s*\d+\s*</b>)")
-
-# Kelas kata dicetak miring tepat sebelum makna pertama: <em>n</em>,
-# <em>v</em>, <em>pron</em>, <em>n Kim</em>. Dipakai untuk memutuskan apakah
-# kata ini pantas diberi foto.
-_POLA_KELAS = re.compile(r"<em>\s*([^<]{1,20})</em>")
 
 _PENANDA_MAKNA = "\x00"  # penanda internal batas antar-makna saat parsing
 
@@ -239,15 +232,9 @@ def _dari_entri(fragmen: str, kata: str) -> Optional[dict]:
     if not makna:
         return None
 
-    kelas = _POLA_KELAS.search(sisa)
     return {
         "judul": judul,
         "makna": makna,
-        "foto_url": None,
-        "sumber": f"KBBI — {judul}",
-        # Kelas kata KBBI ("n", "v", "pron", ...); dipakai internal untuk
-        # menentukan boleh-tidaknya mencari foto.
-        "kelas": (kelas.group(1).strip().split()[0].lower().rstrip(",") if kelas else ""),
     }
 
 
@@ -331,15 +318,12 @@ async def _ambil(client: httpx.AsyncClient, kata: str):
 
 async def cari_ringkasan(kata: str) -> Optional[dict]:
     """
-    Ambil makna (KBBI) + foto pelengkap untuk `kata`.
+    Ambil definisi KBBI untuk `kata`.
 
-    Return dict {"judul", "makna", "foto_url", "sumber"} atau None kalau tidak
-    ketemu / gagal. TIDAK PERNAH melempar exception — pemanggilnya adalah alur
-    chat yang wajib tetap jalan.
-
-    Fotonya bukan dari KBBI (KBBI kamus teks, tidak punya gambar) melainkan
-    dari Wikimedia, dan HANYA untuk kata benda yang judul artikelnya persis
-    kata itu; sifatnya pelengkap — tidak dapat foto tidak membatalkan maknanya.
+    Return dict {"judul", "makna"} — `makna` masih bergaya kamus, yang
+    merapikannya jadi kalimat enak dibaca adalah `makna_service`. None kalau
+    tidak ketemu / gagal. TIDAK PERNAH melempar exception — pemanggilnya adalah
+    alur chat yang wajib tetap jalan.
     """
     kunci = kata.strip().lower()
     if not kunci:
@@ -381,16 +365,6 @@ async def cari_ringkasan(kata: str) -> Optional[dict]:
     except (httpx.HTTPError, asyncio.TimeoutError, OSError):
         # Offline / DNS gagal / timeout — bukan alasan untuk menggagalkan chat.
         hasil = None
-
-    if hasil is not None and hasil.get("kelas") == "n":
-        # Foto HANYA untuk kata benda. Kata kerja dan kata tugas tidak punya
-        # wujud yang bisa difoto, dan memaksakannya justru memasang gambar
-        # yang menyesatkan — "apa" pernah berilustrasi poster film
-        # "Apa Artinya Cinta?", "berdiri" berilustrasi orang berseragam.
-        foto = await cari_foto(hasil["judul"] or kata.strip())
-        if foto:
-            hasil["foto_url"] = foto
-            hasil["sumber"] = f"{hasil['sumber']} · foto: Wikimedia"
 
     if hasil is None and pasti_kosong:
         _cache_kosong.add(kunci)

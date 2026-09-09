@@ -282,3 +282,95 @@ async def saran_kata_lanjutan(transkrip: str, kosakata: list[str], jumlah: int =
             hasil.append(kata)
 
     return hasil[:jumlah]
+
+# ============================================================
+# PENJELASAN MAKNA KATA (dipakai makna_service)
+#
+# KBBI memberi definisi yang benar tapi ditulis dengan gaya kamus: singkatan
+# kelas kata, tanda titik koma bertingkat, contoh kalimat lama. Untuk layar
+# "Makna Kata" dan balasan chat, definisi itu dirapikan dulu oleh AI menjadi
+# kalimat yang enak dibaca — TANPA menambah fakta di luar KBBI.
+#
+# Kalau KBBI tidak punya katanya (nama diri, merek, istilah asing), AI yang
+# menjelaskan dari pengetahuannya sendiri, dan pemanggil menandai sumbernya
+# berbeda supaya pengguna tidak dibuat mengira itu kutipan KBBI.
+# ============================================================
+
+MAKNA_SYSTEM_PROMPT = (
+    "Anda menulis penjelasan arti kata untuk aplikasi IsyaraLive, dibaca pengguna umum "
+    "termasuk pelajar dan Teman Tuli.\n\n"
+    "Anda diberi KATA dan DEFINISI KBBI-nya. Tugas Anda menuliskan ulang definisi itu "
+    "menjadi penjelasan yang mudah dipahami.\n\n"
+    "Aturan:\n"
+    "1. HANYA gunakan informasi dari definisi KBBI yang diberikan. Dilarang menambah "
+    "fakta, sejarah, contoh, atau kaitan yang tidak ada di situ.\n"
+    "2. Kalau KBBI mencantumkan beberapa makna, sebutkan yang paling umum lebih dulu, "
+    "lalu makna lain secara singkat. Makna yang jarang dipakai boleh dilewati.\n"
+    "3. Panjang 2-4 kalimat. Bahasa Indonesia sederhana, tanpa singkatan kelas kata "
+    "(jangan tulis 'n', 'v', 'a', 'pron'), tanpa lafal, tanpa nomor makna KBBI.\n"
+    "4. Jangan mengubah maknanya dan jangan menebak kalau definisinya tidak jelas.\n"
+    "5. Jawab langsung isi penjelasannya saja — tanpa kalimat pembuka seperti 'Menurut "
+    "KBBI' atau 'Berikut penjelasannya', tanpa tanda kutip, tanpa format Markdown."
+)
+
+MAKNA_TANPA_KBBI_SYSTEM_PROMPT = (
+    "Anda menulis penjelasan arti kata untuk aplikasi IsyaraLive, dibaca pengguna umum "
+    "termasuk pelajar dan Teman Tuli.\n\n"
+    "Kata yang diberikan TIDAK ADA di KBBI (biasanya nama diri, merek, atau istilah "
+    "asing). Jelaskan artinya dari pengetahuan Anda sendiri.\n\n"
+    "Aturan:\n"
+    "1. Panjang 2-3 kalimat, Bahasa Indonesia sederhana.\n"
+    "2. Jujur: kalau Anda tidak yakin kata itu berarti apa, katakan bahwa artinya tidak "
+    "pasti — jangan mengarang.\n"
+    "3. Jawab langsung isi penjelasannya saja — tanpa kalimat pembuka, tanpa tanda "
+    "kutip, tanpa format Markdown."
+)
+
+
+async def jelaskan_makna(kata: str, makna_kbbi: str | None) -> str | None:
+    """
+    Rapikan definisi KBBI jadi penjelasan yang enak dibaca (atau jelaskan sendiri
+    kalau KBBI tidak punya katanya).
+
+    Return None kalau AI tidak bisa dipakai — Azure belum dikonfigurasi, jaringan
+    gagal, jawabannya kosong. SENGAJA tidak melempar exception: pemanggilnya
+    adalah alur kamus & chat yang wajib tetap jalan, dan definisi KBBI mentah
+    masih jauh lebih baik daripada layar kosong.
+    """
+    kata = (kata or "").strip()
+    if not kata:
+        return None
+    if not AZURE_OPENAI_KEY or not AZURE_OPENAI_URL:
+        return None
+
+    if makna_kbbi:
+        system = MAKNA_SYSTEM_PROMPT
+        isi = f"KATA: {kata}\n\nDEFINISI KBBI:\n{makna_kbbi.strip()}"
+    else:
+        system = MAKNA_TANPA_KBBI_SYSTEM_PROMPT
+        isi = f"KATA: {kata}"
+
+    payload = {
+        "model": AZURE_OPENAI_MODEL,
+        "max_completion_tokens": 400,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": isi},
+        ],
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                AZURE_OPENAI_URL,
+                headers={"api-key": AZURE_OPENAI_KEY, "Content-Type": "application/json"},
+                json=payload,
+            )
+        if response.status_code != 200:
+            return None
+        data = response.json()
+        hasil = (data["choices"][0]["message"]["content"] or "").strip().strip('"')
+    except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError):
+        return None
+
+    return hasil or None
