@@ -36,6 +36,10 @@ from app.models.chat import (  # noqa: F401
     ChatMessage,
     MessageRole,
 )
+from app.models.correction import (  # noqa: F401
+    DetectionCorrection,
+    CorrectionKind,
+)
 
 __all__ = [
     "User", "UserRole",
@@ -45,4 +49,5 @@ __all__ = [
     "DictionaryEntry", "DictionaryCategory",
     "LearningLevel", "LearningMaterial", "UserProgress",
     "ChatConversation", "ChatMessage", "MessageRole",
+    "DetectionCorrection", "CorrectionKind",
 ]

@@ -32,7 +32,7 @@ def get_db():
 
 def init_db():
     """Buat semua tabel kalau belum ada. Dipanggil saat startup."""
-    from app.models import user, submission, vote, point_log, dictionary, learning, chat  # noqa: F401 (import agar ke-register)
+    from app.models import user, submission, vote, point_log, dictionary, learning, chat, correction  # noqa: F401 (import agar ke-register)
     Base.metadata.create_all(bind=engine)
     _migrate_sqlite_columns()
 

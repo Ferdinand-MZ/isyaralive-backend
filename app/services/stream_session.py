@@ -1,4 +1,5 @@
 from collections import deque
+from dataclasses import dataclass, field
 from typing import List, Optional, Sequence, Tuple
 
 from app.services.detector import SEQUENCE_LENGTH, FEATURE_SIZE
@@ -86,12 +87,39 @@ _RAW_WINDOW_MS = (
 RawSample = Tuple[float, List[float]]
 
 
+@dataclass
+class KataTranskrip:
+    """
+    Satu kata yang sudah masuk transkrip, BESERTA bukti yang menghasilkannya.
+
+    `sequence` (15x63 landmark yang dipakai model saat itu) disimpan justru
+    karena inilah satu-satunya kesempatan menyimpannya: buffer sesi terus
+    bergulir, jadi begitu frame berikutnya masuk, potongan gerakan yang
+    melahirkan kata ini hilang selamanya.
+
+    Gunanya: kalau pengguna membetulkan kata yang salah tebak, koreksinya
+    baru berguna untuk melatih model bila kita masih punya gerakan aslinya.
+    Tanpa ini, koreksi cuma jadi "katanya salah" tanpa contoh yang bisa
+    dipelajari.
+
+    Ukurannya kecil: 15 x 63 angka ~ 7,5 KB sebagai JSON per kata.
+    """
+    label: str
+    sequence: List[List[float]] = field(default_factory=list)
+    confidence: float = 0.0
+
+
 class DetectionSession:
     def __init__(self,
                  stability_frames: int = STABILITY_FRAMES,
                  repeat_cooldown: int = REPEAT_COOLDOWN_FRAMES):
         self.buffer: deque = deque(maxlen=SEQUENCE_LENGTH)
         self.transcript: List[str] = []
+
+        # Sejajar indeks dengan `transcript`: kata ke-i di transkrip punya
+        # bukti gerakan di `kata[i]`. Dipakai saat pengguna mengoreksi kata
+        # (lihat KataTranskrip).
+        self.kata: List[KataTranskrip] = []
 
         self._stability_frames = stability_frames
         self._repeat_cooldown = repeat_cooldown
@@ -262,11 +290,15 @@ class DetectionSession:
         self._candidate_count = 0
 
     # ---------------- transkrip ----------------
-    def commit(self, label: str) -> bool:
+    def commit(self, label: str, confidence: float = 0.0) -> bool:
         """
         Daftarkan hasil prediksi. Return True kalau kata BARU masuk transkrip.
         Kata baru dianggap valid kalau muncul stabil beberapa frame berturut-turut
         dan tidak sedang dalam cooldown pengulangan.
+
+        Saat kata benar-benar masuk, potongan gerakan yang melahirkannya ikut
+        disimpan (lihat KataTranskrip) — buffer akan tergulir dan bukti itu
+        tidak bisa diambil lagi setelah frame berikutnya datang.
         """
         if not label:
             self._candidate = None
@@ -286,6 +318,11 @@ class DetectionSession:
             return False
 
         self.transcript.append(label)
+        self.kata.append(KataTranskrip(
+            label=label,
+            sequence=[list(f) for f in self.buffer],
+            confidence=float(confidence),
+        ))
         self._last_committed = label
         self._cooldown = self._repeat_cooldown
         self._candidate_count = 0
@@ -294,9 +331,64 @@ class DetectionSession:
     def transcript_text(self) -> str:
         return " ".join(self.transcript)
 
+    def transcript_words(self) -> List[str]:
+        """
+        Transkrip sebagai DAFTAR kata.
+
+        Klien tidak boleh memecah `transcript_text()` dengan split(" ") untuk
+        menandai kata mana yang mau dikoreksi: ada label yang memang berisi
+        spasi ("Terima Kasih", "Hari ini"), jadi indeks hasil split tidak
+        pernah cocok dengan indeks di sini.
+        """
+        return list(self.transcript)
+
+    # ---------------- koreksi ----------------
+    def ganti_kata(self, indeks: int, label_baru: str) -> Optional[KataTranskrip]:
+        """
+        Ganti kata ke-`indeks` dengan `label_baru` (pengguna membetulkan tebakan
+        yang salah).
+
+        Return KataTranskrip LAMA (label salah + bukti gerakannya) supaya
+        pemanggil bisa menyimpannya sebagai data latih. None kalau indeksnya
+        tidak ada.
+        """
+        if not (0 <= indeks < len(self.transcript)):
+            return None
+
+        lama = self.kata[indeks]
+        self.transcript[indeks] = label_baru
+        self.kata[indeks] = KataTranskrip(
+            label=label_baru,
+            sequence=lama.sequence,
+            confidence=lama.confidence,
+        )
+
+        # Kata terakhir ikut berubah supaya cooldown pengulangan mengikuti apa
+        # yang SEKARANG tertulis, bukan tebakan yang sudah dibuang.
+        if indeks == len(self.transcript) - 1:
+            self._last_committed = label_baru
+
+        return lama
+
+    def hapus_kata(self, indeks: int) -> Optional[KataTranskrip]:
+        """
+        Buang kata ke-`indeks` (model menangkap gerakan yang sebenarnya bukan
+        isyarat apa pun — false positive).
+
+        Return KataTranskrip yang dibuang, termasuk bukti gerakannya.
+        """
+        if not (0 <= indeks < len(self.transcript)):
+            return None
+
+        self.transcript.pop(indeks)
+        dibuang = self.kata.pop(indeks)
+        self._last_committed = self.transcript[-1] if self.transcript else None
+        return dibuang
+
     def reset(self) -> None:
         """Reset total — dipakai saat user menekan tombol 'mulai ulang'."""
         self.clear_buffer()
         self.transcript.clear()
+        self.kata.clear()
         self._last_committed = None
         self._cooldown = 0
