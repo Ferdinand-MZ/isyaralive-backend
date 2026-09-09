@@ -7,8 +7,9 @@ from app.core.database import Base
 
 
 class SubmissionStatus(str, enum.Enum):
-    pending = "pending"      # baru diupload, menunggu vote komunitas & validator
-    approved = "approved"    # sudah divalidasi validator, masuk dataset final
+    pending = "pending"      # baru diupload, menunggu verifikasi admin
+    voting = "voting"        # lolos verifikasi admin, DIBUKA UNTUK VOTING komunitas — BELUM masuk dataset
+    approved = "approved"    # diputuskan admin masuk dataset final
     rejected = "rejected"
 
 
@@ -40,6 +41,12 @@ class GestureSubmission(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
     reviewed_at = Column(DateTime, nullable=True)
+
+    # Jendela voting komunitas. Terisi saat admin membuka voting, dan sengaja
+    # TIDAK dikosongkan setelah keputusan akhir — jejaknya berguna untuk
+    # menjelaskan kenapa sebuah gestur diterima/ditolak.
+    voting_started_at = Column(DateTime, nullable=True)
+    voting_ends_at = Column(DateTime, nullable=True)
 
     # Relasi
     user = relationship(

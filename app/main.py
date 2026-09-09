@@ -34,6 +34,7 @@ init_db()
 
 os.makedirs("uploads/approved", exist_ok=True)
 os.makedirs("uploads/pending", exist_ok=True)
+os.makedirs("uploads/voting", exist_ok=True)
 os.makedirs("uploads/rejected", exist_ok=True)
 os.makedirs("assets/alphabet", exist_ok=True)
 os.makedirs("assets/dictionary", exist_ok=True)
@@ -48,6 +49,10 @@ app.mount("/static/approved", StaticFiles(directory="uploads/approved"), name="a
 # panel moderasi, makanya folder pending juga di-mount, terpisah dari /approved
 # yang publik supaya jelas mana yang belum lolos review.
 app.mount("/static/pending", StaticFiles(directory="uploads/pending"), name="pending")
+# Video yang sedang DIBUKA UNTUK VOTING tampil publik di feed komunitas —
+# pengguna tidak bisa menilai gestur yang tidak bisa ditonton. Folder & mount
+# sendiri supaya jelas bedanya dengan /approved (sudah masuk dataset).
+app.mount("/static/voting", StaticFiles(directory="uploads/voting"), name="voting")
 # Kontributor tetap perlu melihat ulang video yang DITOLAK di "Kontribusi Saya"
 # supaya tahu apa yang harus diperbaiki sebelum mengunggah lagi. Tanpa mount ini
 # kartunya tampil sebagai video rusak, bukan sebagai bahan evaluasi.

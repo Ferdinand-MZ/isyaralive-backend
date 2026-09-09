@@ -1,33 +1,43 @@
 level_order,level_title,material_order,word,video_file,cara_isyarat
-1,Sapaan Dasar,1,Halo,halo.mp4,
-1,Sapaan Dasar,2,Selamat,selamat.mov,
-1,Sapaan Dasar,3,Pagi,pagi.mov,
-1,Sapaan Dasar,4,Siang,siang.mov,
-1,Sapaan Dasar,5,Malam,malam.mov,
-1,Sapaan Dasar,6,Terima Kasih,terima_kasih.mp4,
-2,Keluarga,1,Saya,saya.mp4,
-2,Keluarga,2,Kamu,kamu.mp4,
-2,Keluarga,3,Ayah,ayah.mp4,
-2,Keluarga,4,Ibu,ibu.mov,
-2,Keluarga,5,Keluarga,keluarga.mov,
-2,Keluarga,6,Teman,teman.mov,
-2,Keluarga,7,Guru,guru.mov,
-3,Kata Tanya,1,Apa,apa.mp4,
-3,Kata Tanya,2,Siapa,siapa.mp4,
-3,Kata Tanya,3,Dimana,dimana.mp4,
-3,Kata Tanya,4,Kapan,kapan.mp4,
-3,Kata Tanya,5,Mengapa,mengapa.mov,
-3,Kata Tanya,6,Bagaimana,bagaimana.mp4,
-4,Aktivitas Sehari-hari,1,Makan,makan.mp4,
-4,Aktivitas Sehari-hari,2,Minum,minum.mp4,
-4,Aktivitas Sehari-hari,3,Tidur,tidur.mp4,
-4,Aktivitas Sehari-hari,4,Belajar,belajar.mp4,
-4,Aktivitas Sehari-hari,5,Membaca,membaca.mp4,
-4,Aktivitas Sehari-hari,6,Menulis,menulis.mp4,
-4,Aktivitas Sehari-hari,7,Mandi,mandi.mp4,
-5,Ekspresi & Perasaan,1,Senang,senang.mp4,
-5,Ekspresi & Perasaan,2,Sedih,sedih.mp4,
-5,Ekspresi & Perasaan,3,Marah,marah.mp4,
-5,Ekspresi & Perasaan,4,Bingung,bingung.mp4,
-5,Ekspresi & Perasaan,5,Sabar,sabar.mp4,
-5,Ekspresi & Perasaan,6,Ramah,ramah.mp4,
+1,Sapaan Dasar,1,Halo,halo.mp4,"Angkat tangan terbuka setinggi bahu, lalu lambaikan ringan ke kiri dan kanan sambil tersenyum."
+1,Sapaan Dasar,2,Selamat,selamat.mov,"Kedua tangan terbuka di depan dada, gerakkan ke depan dengan lembut sebagai tanda salam."
+1,Sapaan Dasar,3,Pagi,pagi.mov,"Satu tangan terbuka bergerak naik dari bawah ke atas, seperti matahari terbit."
+1,Sapaan Dasar,4,Siang,siang.mov,"Tangan terbuka berada di posisi atas kepala, menandakan matahari tepat di atas."
+1,Sapaan Dasar,5,Malam,malam.mov,"Telapak tangan bergerak turun menutup, seperti matahari terbenam."
+1,Sapaan Dasar,6,Terima Kasih,terima_kasih.mp4,"Ujung jari menyentuh area dagu, lalu gerakkan tangan ke depan dan sedikit ke bawah."
+2,Perkenalan Diri,1,Nama,nama.mov,Dua jari telunjuk dan tengah dari kedua tangan disatukan mendatar di depan dada.
+2,Perkenalan Diri,2,Saya,saya.mp4,Telunjuk menunjuk ke arah dada sendiri.
+2,Perkenalan Diri,3,Kamu,kamu.mp4,Telunjuk menunjuk ke arah lawan bicara.
+2,Perkenalan Diri,4,Dia,dia.mp4,"Telunjuk menunjuk ke samping, ke arah orang ketiga yang dimaksud."
+2,Perkenalan Diri,5,Asal,asal.mov,"Tangan bergerak dari satu titik menjauh, menandakan tempat berasal."
+2,Perkenalan Diri,6,Teman,teman.mov,Kedua telunjuk saling mengait atau berdampingan sejajar.
+3,Keluarga,1,Keluarga,keluarga.mov,Kedua tangan membentuk lingkaran ke arah luar lalu bertemu di depan badan.
+3,Keluarga,2,Ayah,ayah.mp4,Tangan menyentuh area dahi atau pelipis sebagai penanda ayah.
+3,Keluarga,3,Ibu,ibu.mov,Tangan menyentuh area pipi atau dagu sebagai penanda ibu.
+3,Keluarga,4,Anak,anak.mov,"Telapak tangan menghadap bawah pada posisi rendah, menunjukkan tinggi seorang anak."
+3,Keluarga,5,Kami,kami.mp4,Telunjuk bergerak melingkar mencakup diri sendiri dan orang di sekitar.
+3,Keluarga,6,Mereka,mereka.mp4,Telunjuk menunjuk dan menyapu ke arah kelompok orang yang jauh.
+4,Aktivitas Sehari-hari,1,Makan,makan.mp4,Ujung jari dirapatkan lalu digerakkan berulang menuju mulut.
+4,Aktivitas Sehari-hari,2,Minum,minum.mp4,Tangan membentuk gelas lalu dimiringkan ke arah mulut.
+4,Aktivitas Sehari-hari,3,Mandi,mandi.mp4,Kedua tangan menggosok bagian bahu dan lengan secara bergantian.
+4,Aktivitas Sehari-hari,4,Tidur,tidur.mp4,Telapak tangan menempel di sisi kepala sambil kepala dimiringkan.
+4,Aktivitas Sehari-hari,5,Duduk,duduk.mp4,Jari menekuk lalu diletakkan di atas punggung tangan lain yang mendatar.
+4,Aktivitas Sehari-hari,6,Berdiri,berdiri.mp4,Dua jari berdiri tegak di atas telapak tangan yang mendatar.
+5,Perasaan,1,Senang,senang.mp4,Tangan bergerak naik di depan dada dengan ekspresi wajah gembira.
+5,Perasaan,2,Sedih,sedih.mp4,Tangan bergerak turun dari mata ke pipi dengan ekspresi wajah murung.
+5,Perasaan,3,Marah,marah.mp4,Tangan menegang di depan dada dengan ekspresi wajah keras.
+5,Perasaan,4,Bingung,bingung.mp4,Tangan bergerak memutar di dekat kepala dengan alis mengernyit.
+5,Perasaan,5,Baik,baik.mp4,Ibu jari diacungkan ke atas dengan ekspresi wajah ramah.
+5,Perasaan,6,Ramah,ramah.mp4,Tangan terbuka bergerak lembut ke depan disertai senyuman.
+6,Kata Tanya,1,Apa,apa.mp4,"Telapak tangan terbuka menghadap atas, digerakkan sedikit ke samping dengan alis terangkat."
+6,Kata Tanya,2,Siapa,siapa.mp4,Telunjuk digerakkan ringan dengan ekspresi bertanya.
+6,Kata Tanya,3,Dimana,dimana.mp4,Telunjuk digerakkan ke kiri dan kanan dengan ekspresi bertanya.
+6,Kata Tanya,4,Kapan,kapan.mp4,"Telunjuk menunjuk pergelangan tangan lain, seperti menanyakan waktu."
+6,Kata Tanya,5,Mengapa,mengapa.mov,Tangan bergerak dari dahi ke depan dengan ekspresi bertanya.
+6,Kata Tanya,6,Bagaimana,bagaimana.mp4,"Kedua telapak tangan terbuka menghadap atas, digerakkan bergantian."
+7,Belajar dan Sekolah,1,Belajar,belajar.mp4,Tangan terbuka bergerak dari telapak tangan lain menuju ke arah kepala.
+7,Belajar dan Sekolah,2,Guru,guru.mov,"Kedua tangan bergerak dari sisi kepala ke depan, lalu turun sejajar badan."
+7,Belajar dan Sekolah,3,Membaca,membaca.mp4,Dua jari bergerak menyusuri telapak tangan lain yang terbuka seperti halaman buku.
+7,Belajar dan Sekolah,4,Menulis,menulis.mp4,Tangan seolah memegang pena dan menggoreskan di atas telapak tangan lain.
+7,Belajar dan Sekolah,5,Melihat,melihat.mp4,Dua jari membentuk V di dekat mata lalu digerakkan ke arah objek.
+7,Belajar dan Sekolah,6,Sekian,sekian.mov,Telapak tangan terbuka digerakkan mendatar ke samping sebagai tanda selesai.

@@ -16,6 +16,12 @@ class SubmissionResponse(BaseModel):
     admin_note: Optional[str] = None
     created_at: datetime
     reviewed_at: Optional[datetime] = None
+
+    # Terisi hanya untuk submission yang pernah dibuka voting-nya. Null pada
+    # alur lama (pending -> approved langsung), jadi klien lama tidak rusak.
+    voting_started_at: Optional[datetime] = None
+    voting_ends_at: Optional[datetime] = None
+
     user: UserResponse
 
     # Ringkasan vote, dihitung di router (bukan kolom asli tabel)
