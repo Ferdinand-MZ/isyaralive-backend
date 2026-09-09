@@ -15,11 +15,12 @@ from app.core.database import init_db
 from app.core.security import decode_access_token
 from app.routers import (
     auth, submissions, admin, gesture_lookup, ai, vote,
-    leaderboard, dictionary, learning, chatbot, users,
+    leaderboard, dictionary, learning, chatbot, users, corrections,
 )
 from app.services.detector_instance import detector
 from app.services.stream_session import DetectionSession
 from app.services.detector import SEQUENCE_LENGTH, FEATURE_SIZE, correct_aspect_ratio
+from app.services.correction_service import simpan_koreksi
 
 app = FastAPI(title="IsyaraLive API", version="2.1.0")
 
@@ -71,6 +72,7 @@ app.include_router(dictionary.router)
 app.include_router(learning.router)
 app.include_router(chatbot.router)
 app.include_router(users.router)
+app.include_router(corrections.router)
 
 
 @app.get("/")
@@ -133,6 +135,26 @@ def health():
 # Pesan kontrol:
 #      {"type": "reset"}  -> kosongkan buffer + transkrip (mulai kalimat baru)
 #      {"type": "ping"}   -> balasan {"type": "pong"} untuk cek koneksi
+#      {"type": "edit", "index": <i>, "label": "<kata benar>"}
+#          -> betulkan kata ke-i di transkrip. Balasan {"type":"edit_ok", ...}.
+#      {"type": "delete", "index": <i>}
+#          -> buang kata ke-i (model memunculkan kata padahal bukan isyarat).
+#
+# KOREKSI = DATA LATIH. Saat kata dibetulkan/dibuang, potongan gerakan yang
+# menghasilkan tebakan itu (15x63 landmark, disimpan DetectionSession saat kata
+# masuk) ikut dicatat ke tabel detection_corrections. Inilah satu-satunya
+# kesempatan menyimpannya — buffer sesi terus bergulir. Tanpa itu koreksi cuma
+# berarti "tebakannya salah" tanpa contoh yang bisa dipelajari model.
+#
+# `label` untuk edit HARUS salah satu kelas yang dikenal model (lihat daftar
+# "classes" pada balasan {"type":"ready"}). Kata di luar itu tidak bisa
+# dipelajari model tanpa menambah kelas & melatih ulang dari awal, jadi
+# ditolak dengan pesan yang mengarahkan ke jalur kontribusi SignHub.
+#
+# Setiap balasan yang membawa "transcript" juga membawa "transcript_words"
+# (transkrip sebagai DAFTAR). Klien WAJIB memakai daftar itu untuk menentukan
+# indeks kata: sebagian label memang berisi spasi ("Terima Kasih", "Hari ini"),
+# jadi memecah "transcript" dengan split(" ") menghasilkan indeks yang meleset.
 #
 # Autentikasi opsional: /ws/detect?token=<JWT>. Kalau token dikirim dan
 # valid, user_id ikut dicatat di balasan pertama. Tanpa token, endpoint
@@ -164,6 +186,10 @@ async def websocket_detect(websocket: WebSocket, token: Optional[str] = Query(de
         "feature_size": FEATURE_SIZE,
         "model_loaded": detector.model_loaded,
         "accepted_modes": ["landmark", "frame"],
+        # Kosakata yang benar-benar bisa dikenali model. Klien memakainya untuk
+        # membatasi pilihan saat pengguna membetulkan kata — mengoreksi ke kata
+        # di luar daftar ini tidak bisa dipelajari model.
+        "classes": list(detector.class_names or []),
     }))
 
     try:
@@ -182,7 +208,13 @@ async def websocket_detect(websocket: WebSocket, token: Optional[str] = Query(de
                 continue
             if msg_type == "reset":
                 session.reset()
-                await websocket.send_text(json.dumps({"type": "reset_ok", "transcript": ""}))
+                await websocket.send_text(json.dumps({
+                    "type": "reset_ok", "transcript": "", "transcript_words": [],
+                }))
+                continue
+            if msg_type in ("edit", "delete"):
+                balasan = await _tangani_koreksi(session, payload, user_id)
+                await websocket.send_text(json.dumps(balasan))
                 continue
 
             # ---------- MODE LANDMARK ----------
@@ -206,6 +238,7 @@ async def websocket_detect(websocket: WebSocket, token: Optional[str] = Query(de
                         "buffering": tersisa > 0,
                         "buffer_size": tersisa,
                         "transcript": session.transcript_text(),
+                        "transcript_words": session.transcript_words(),
                     }))
                     continue
 
@@ -264,6 +297,7 @@ async def websocket_detect(websocket: WebSocket, token: Optional[str] = Query(de
                     "mode": "frame", "detected": False, "label": "", "confidence": 0.0,
                     "buffering": tersisa > 0, "buffer_size": tersisa, "landmarks": None,
                     "transcript": session.transcript_text(),
+                    "transcript_words": session.transcript_words(),
                 }))
                 continue
 
@@ -296,6 +330,98 @@ def _decode_frame(frame_b64: str):
         return None
 
 
+def _cocokkan_kelas(label: str) -> Optional[str]:
+    """
+    Samakan `label` dengan salah satu kelas model, tanpa peduli huruf
+    besar/kecil & spasi berlebih. Return bentuk resmi kelasnya, atau None kalau
+    memang bukan kosakata model.
+    """
+    bersih = " ".join((label or "").split()).lower()
+    if not bersih:
+        return None
+    for kelas in (detector.class_names or []):
+        if kelas.lower() == bersih:
+            return kelas
+    return None
+
+
+async def _tangani_koreksi(
+    session: DetectionSession,
+    payload: dict,
+    user_id: Optional[int],
+) -> dict:
+    """
+    Jalankan pesan {"type":"edit"|"delete"} dan CATAT koreksinya sebagai data
+    latih (lihat catatan protokol di atas).
+
+    Penyimpanan ke database dijalankan di threadpool: SQLAlchemy di proyek ini
+    sinkron, dan event loop yang sama sedang melayani stream landmark 10 fps
+    milik semua pengguna lain.
+
+    Kegagalan menyimpan TIDAK membatalkan koreksinya di layar — transkrip
+    pengguna tetap terbetulkan, `tersimpan: false` yang memberi tahu bahwa
+    contohnya tidak terekam.
+    """
+    jenis = payload.get("type")
+    indeks = payload.get("index")
+    if not isinstance(indeks, int):
+        return {"type": "edit_error", "message": "'index' harus berupa angka"}
+
+    if jenis == "delete":
+        dibuang = session.hapus_kata(indeks)
+        if dibuang is None:
+            return {"type": "edit_error", "message": f"Tidak ada kata di indeks {indeks}"}
+        tersimpan = await asyncio.to_thread(
+            simpan_koreksi, dibuang, None, user_id, payload.get("mode")
+        )
+        return {
+            "type": "edit_ok",
+            "action": "delete",
+            "index": indeks,
+            "predicted_label": dibuang.label,
+            "corrected_label": None,
+            "tersimpan": tersimpan,
+            "transcript": session.transcript_text(),
+            "transcript_words": session.transcript_words(),
+        }
+
+    label_benar = _cocokkan_kelas(payload.get("label", ""))
+    if label_benar is None:
+        # Kata di luar 46 kelas tidak bisa dipelajari model tanpa menambah
+        # kelas & melatih ulang — jadi jangan diterima diam-diam seolah model
+        # akan mengenalinya nanti. Jalur yang benar untuk kosakata baru adalah
+        # kontribusi gestur SignHub (unggah video -> verifikasi -> voting).
+        return {
+            "type": "edit_error",
+            "message": "Kata itu belum ada di kosakata model. Untuk menambah "
+                       "kosakata baru, kirim lewat kontribusi gestur SignHub.",
+            "classes": list(detector.class_names or []),
+        }
+
+    lama = session.ganti_kata(indeks, label_benar)
+    if lama is None:
+        return {"type": "edit_error", "message": f"Tidak ada kata di indeks {indeks}"}
+
+    tersimpan = False
+    if lama.label != label_benar:
+        # Kalau pengguna "mengoreksi" ke kata yang sama, tidak ada yang perlu
+        # dipelajari — jangan kotori data latih dengan baris tanpa isi.
+        tersimpan = await asyncio.to_thread(
+            simpan_koreksi, lama, label_benar, user_id, payload.get("mode")
+        )
+
+    return {
+        "type": "edit_ok",
+        "action": "edit",
+        "index": indeks,
+        "predicted_label": lama.label,
+        "corrected_label": label_benar,
+        "tersimpan": tersimpan,
+        "transcript": session.transcript_text(),
+        "transcript_words": session.transcript_words(),
+    }
+
+
 async def _predict_from_session(session: DetectionSession) -> dict:
     """Jalankan LSTM kalau buffer sudah 15 frame, lalu update transkrip."""
     if not session.is_ready:
@@ -303,13 +429,17 @@ async def _predict_from_session(session: DetectionSession) -> dict:
             "detected": False, "label": "", "confidence": 0.0,
             "buffering": True, "buffer_size": session.buffer_size,
             "transcript": session.transcript_text(),
+            "transcript_words": session.transcript_words(),
         }
 
     result = await asyncio.to_thread(detector.predict_sequence, session.sequence())
 
     is_new_word = False
     if result.get("detected"):
-        is_new_word = session.commit(result["label"])
+        # Keyakinan ikut dicatat bersama katanya: kalau nanti kata ini
+        # dikoreksi, seberapa yakin model saat salah itu informasi yang
+        # membedakan "tebakan asal" dari "salah tapi mantap".
+        is_new_word = session.commit(result["label"], result.get("confidence", 0.0))
     else:
         session.commit("")
 
@@ -318,6 +448,7 @@ async def _predict_from_session(session: DetectionSession) -> dict:
         "buffer_size": session.buffer_size,
         "is_new_word": is_new_word,           # True saat kata resmi masuk transkrip
         "transcript": session.transcript_text(),
+        "transcript_words": session.transcript_words(),
     })
     return result
 
