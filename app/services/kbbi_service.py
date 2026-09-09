@@ -229,7 +229,7 @@ def _dari_entri(fragmen: str, kata: str) -> Optional[dict]:
     # "kata lemanya diulang di sini" — mis. "mereka -- tiga kali sehari". Di
     # luar konteks kamus itu tidak terbaca, jadi dikembalikan ke katanya.
     if judul:
-        makna = re.sub(r"(?<=\s)(?:--|~|-)(?=\s)|(?<!\w)--(?!\w)|~", judul, makna)
+        makna = re.sub(r"(?<=\s)(?:--|[-~–—])(?=\s)|(?<!\w)--(?!\w)|~", judul, makna)
 
     if not makna:
         return None
