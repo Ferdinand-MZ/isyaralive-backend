@@ -154,12 +154,54 @@ def resolve_word(word: str, db: Session) -> list[dict]:
     return items
 
 
+# Entri kamus terpanjang berisi berapa kata ("Terima Kasih", "Hari ini" = 2).
+# Dipakai sebagai batas pencocokan frasa di pecah_teks().
+MAKS_KATA_FRASA = 3
+
+
+def _bersihkan_kata(kata: str) -> str:
+    """Buang tanda baca di ujung. Hasil speech-to-text kadang membawa koma/titik,
+    dan "halo," tidak akan pernah cocok dengan entri kamus "Halo"."""
+    return kata.strip(" \t\n.,!?;:\"'“”‘’()").lower()
+
+
+def pecah_teks(teks: str, db: Session) -> list[dict]:
+    """
+    Ubah kalimat jadi daftar peraga, mendahulukan frasa yang panjang.
+
+    KENAPA tidak cukup teks.split(): sebagian entri kamus berisi DUA kata —
+    "Terima Kasih", "Hari ini". Kalau dipecah per kata lebih dulu, "terima" dan
+    "kasih" sama-sama tidak ada di kamus, jadi keduanya dieja huruf per huruf
+    (11 video huruf) padahal video peraganya jelas-jelas ada.
+
+    Karena itu dicoba dari yang terpanjang: 3 kata, lalu 2, baru 1.
+    """
+    kata_list = [k for k in (_bersihkan_kata(w) for w in teks.split()) if k]
+    hasil: list[dict] = []
+
+    i = 0
+    while i < len(kata_list):
+        cocok = None
+        for panjang in range(min(MAKS_KATA_FRASA, len(kata_list) - i), 0, -1):
+            frasa = " ".join(kata_list[i:i + panjang])
+            # Frasa hanya dicari di kamus/komunitas — ejaan alfabet baru
+            # dipakai kalau satu kata pun tidak ketemu (lihat di bawah).
+            if panjang > 1 and not (_dictionary_source(frasa, db) or _community_source(frasa, db)):
+                continue
+            if panjang > 1 or True:
+                cocok = (frasa, panjang)
+                break
+        frasa, panjang = cocok if cocok else (kata_list[i], 1)
+        hasil.extend(resolve_word(frasa, db))
+        i += panjang
+
+    return hasil
+
+
 @router.post("/text-to-video")
 def text_to_gesture(data: TextToGestureRequest, db: Session = Depends(get_db)):
     """Peragaan berbasis video. Item dengan available=false berarti aset belum tersedia."""
-    results = []
-    for word in data.text.lower().split():
-        results.extend(resolve_word(word, db))
+    results = pecah_teks(data.text, db)
 
     missing = [r["word"] for r in results if not r["available"]]
     return {
@@ -191,33 +233,32 @@ def text_to_animation(data: TextToGestureRequest, db: Session = Depends(get_db))
     sequence = []
     missing = []
 
-    for word in data.text.lower().split():
-        for item in resolve_word(word, db):
-            animation = extract_animation(item["path"], detector) if item["available"] else None
+    for item in pecah_teks(data.text, db):
+        animation = extract_animation(item["path"], detector) if item["available"] else None
 
-            if animation is None:
-                missing.append(item["word"])
-                sequence.append({
-                    "word": item["word"],
-                    "type": item["type"],
-                    "source": item["source"],
-                    "available": False,
-                    "video_url": item["video_url"],
-                    "fps": 0,
-                    "frame_count": 0,
-                    "frames": [],
-                })
-                continue
-
+        if animation is None:
+            missing.append(item["word"])
             sequence.append({
                 "word": item["word"],
                 "type": item["type"],
                 "source": item["source"],
-                "available": True,
-                "video_url": item["video_url"],   # cadangan kalau painter dimatikan
-                "fps": animation["fps"],
-                "frame_count": animation["frame_count"],
-                "frames": animation["frames"],
+                "available": False,
+                "video_url": item["video_url"],
+                "fps": 0,
+                "frame_count": 0,
+                "frames": [],
             })
+            continue
+
+        sequence.append({
+            "word": item["word"],
+            "type": item["type"],
+            "source": item["source"],
+            "available": True,
+            "video_url": item["video_url"],   # cadangan kalau painter dimatikan
+            "fps": animation["fps"],
+            "frame_count": animation["frame_count"],
+            "frames": animation["frames"],
+        })
 
     return {"sequence": sequence, "missing_assets": missing}
